@@ -1,6 +1,6 @@
 # Using Krispr
 
-Running it, what it reports, and the run modes. Setup for your own project is in
+Running it, what it reports, incremental runs and diff mode. Setup for your own project is in
 [setup.md](setup.md); tuning what gets mutated and how fast it runs is in [tuning.md](tuning.md).
 
 ## Running it on the sample
@@ -34,8 +34,8 @@ local plugin, compiler plugin and runtime. The output is `sample/build/krispr/`:
 - `history.json`: the verdicts the next run may reuse (see [Incremental runs](#incremental-runs))
 - `logs/` and `record/`: the output of each forked JVM
 - `build/`: the instrumented build itself (see below)
-- `html/index.html`, `pr-summary.md`, `krispr.sarif`, and (diff mode only) `diff.md` and
-  `diff-annotations.json`: human-facing reports, written from `report.json` by `krisprReport` (see below)
+- `html/index.html`, `pr-summary.md` and `krispr.sarif`: human-facing reports, written from `report.json`
+  by `krisprReport` (see below)
 
 The terminal summary prints a headline (counts by status and both scores), then the survivors grouped
 by file, ordered by a heuristic that puts branch/condition operators first, state/return-value operators
@@ -61,16 +61,13 @@ under `build/krispr/`:
   fallback list is shown when the source file cannot be found under the project directory. Light and dark
   themes follow the OS (`prefers-color-scheme`), and the layout stays readable down to phone width. Open
   it straight from disk; nothing needs a server.
-- `pr-summary.md`: a GitHub-flavoured markdown PR comment: the headline covered score, then
-  survivors grouped by file, capped at `maxSurvivorsPerFile` per file, each one worded as a test
-  someone could write, e.g. "No test fails if `a < b` becomes `a <= b` at Foo.kt:42".
+- `pr-summary.md`: a GitHub-flavoured markdown PR comment: the headline covered score (in diff mode,
+  how many mutants the changed lines had and how many survived instead), then survivors grouped by
+  file, at most `maxSurvivorsPerFile` per file and 20 in all, each one worded as a test someone could
+  write, e.g. "No test fails if `a < b` becomes `a <= b` at Foo.kt:42". Krispr makes no GitHub API
+  calls itself; see [diff-mode.md](diff-mode.md) for a sample workflow.
 - `krispr.sarif`: SARIF 2.1.0, one `note`-level result per survivor, for GitHub code scanning line
   annotations.
-- `diff.md` and `diff-annotations.json`, written only when the run was scoped by `diffBase`/`--since`
-  (see [Diff mode](#diff-mode)): a PR-comment markdown summary capped at 20 survivors total, and the
-  same survivors as GitHub check-run style line annotations (`path`, `start_line`, `end_line`,
-  `annotation_level`, `message`) for a workflow to turn into inline comments. Krispr makes no GitHub
-  API calls itself; see [diff-mode.md](diff-mode.md) for a sample workflow.
 
 Both `krisprRun` and `krisprReport` run whether or not there are survivors, so a CI job can post
 the summary and upload the SARIF unconditionally:
@@ -139,15 +136,6 @@ A history written by another Krispr version or other timeout settings is ignored
 reusable verdict (43 of 49) with identical results. Tests that inline mutated code (a library's
 `inline` functions) change when the operator set changes, so switching `operators` reruns their mutants.
 
-## Extreme mode
-
-`krisprRun -Pkrispr.mode=extreme` (or `krispr { mode = "extreme" }`) makes one mutant per function,
-which replaces the whole body with a default return: nothing for Unit, `0`, `false`, `null`, `""` or
-an empty collection. The output is a list of **pseudo-tested functions**: covered by tests, yet no test
-fails when the body is gone. There is no score. It is a cheap first pass (extreme mutation, as in PIT's
-Descartes engine): on clikt it tests 270 functions in 9 s and lists 9. Its history is kept apart
-(`history-extreme.json`).
-
 ## Diff mode
 
 `./gradlew krisprRun -Pkrispr.diffBase=origin/main` (or `krispr { diffBase = "origin/main" }`) mutates
@@ -162,86 +150,9 @@ the diff, not the module. A diff that touches nothing in a given module instrume
 clean "0 mutants" run), never the whole module. Set `targetFiles` explicitly to keep instrumenting a
 fixed set of files regardless of what changed.
 
-`krisprRun --since <ref>` is the older, task-only form: it still filters the report to lines changed
-since `<ref>`, but leaves instrumentation and the recording run covering the whole module, since it does
-not touch the build script or a `-P` property. Prefer `-Pkrispr.diffBase`/`diffBase` on CI, where the
-smaller recording run is the point; `--since` is for a quick local look at survivors on your own changes
-without editing anything.
-
 `krispr.diffFailOnSurvivors=true` (or `krispr { diffFailOnSurvivors = true }`) fails `krisprRun` when a
 mutant survives on a changed line; otherwise diff mode always succeeds, since it is meant for review
 feedback, not a merge gate.
 
-See [diff-mode.md](diff-mode.md) for the `diff.md`/`diff-annotations.json` outputs and a sample
-GitHub Actions workflow that posts them on a pull request.
-
-## Test value
-
-The mutant-by-mutant report answers "is this line tested?". A **Test value** section, printed in the
-terminal summary and in `html/index.html`, answers the inverse question per test: does it protect
-anything? It is worded as evidence, never a verdict — "kills 0 of 4 it covers", not "useless test" —
-since a test with no kills yet may still be documentation or a regression guard for something Krispr
-does not mutate.
-
-By default, a mutant's fast path stops at the first test that kills it, so only some questions can be
-answered:
-
-- **kills nothing of what it covers**: a test that ran against a mutant (as the confirmed killer, or a
-  survivor's covering test) and never killed one.
-- per-test kill counts, for tests that do kill something.
-
-`krispr { killMatrix = true }` (or `-Pkrispr.killMatrix=true`, default off) runs every covering test
-against each mutant instead of stopping at the first kill, so every killer is recorded, not just the
-first. That costs the difference between a fast-path run and a full one; measure it on your own suite
-before turning it on for CI. With `killMatrix`, the section adds:
-
-- **redundant tests**: a test whose every kill is also killed by one specific other test, or by the
-  rest of the suite with no single test covering all of them.
-- **a greedy minimal killing set**: the smallest set of tests that kills everything the whole suite
-  kills, with its size against the full kill-capable test count and, when every chosen test has a
-  recorded time, a time comparison against running all of them.
-
-Without `killMatrix`, the section says so and names the option instead of guessing.
-
-## Showing what changed
-
-`krisprRun -Pkrispr.showChanges=true` (or `krispr { showChanges = true }`) shows, for each survivor,
-what the mutant did to the value at its site while its tests ran:
-
-```
-  src/main/kotlin/dev/krispr/sample/Temperature.kt:5  fun celsiusToFahrenheit(celsius: Double): Double = celsius * 9 / 5 + 32
-      celsius * 9 / 5 → celsius * 9 * 5  MATH
-      `celsius * 9 / 5` became `celsius * 9 * 5`; no test failed.
-      what changed: original: 180.0 → mutant: 4500.0
-```
-
-- **How.** After the normal run, each survivor's covering tests run twice more in fresh JVMs, first
-  with the mutant off and then with it on. A probe records the first 3 distinct values at the site:
-  - the mutated expression's result;
-  - for a condition, the branch taken (`true`/`false`);
-  - for `REMOVE_ASSIGNMENT`, the field after the store, read directly and never through a getter.
-    For a state holder's `value`, it records the value stored, or `(skipped)`.
-- **Verdicts.**
-  - `original: X → mutant: Y` means the value changed and no test looked at it. That is a missing
-    assertion.
-  - `same values observed — no test input makes the mutant differ (a missing case, or equivalent)` means the tests never produced an
-    input for which the mutant differs. Examples: a boundary no test hits, or a clause that is always
-    true in the tests.
-  - `same types observed` means the values could only be recorded by type.
-  - `not captured` covers two cases. Some sites have no value to record: removed calls, safe-call
-    bodies, Flow emits and operators, `launch` bodies, swallowed catches, coroutine contexts, and
-    extreme mode. A probe run can also time out.
-- **Rendering.** Values are rendered without side effects, and each is cut at 80 characters.
-  Rendered through `toString` (inside a try/catch):
-  - nulls, primitives, strings, enums and data classes;
-  - JDK and Kotlin collections and arrays of those.
-
-  Any other object is shown as `<TypeName>`, and none of its code runs.
-- **Report outputs.**
-  - `report.json` gets a `change` object per survivor: `verdict`, `original`, `mutant`, `text`, and
-    `firstDifference` when the same values came in another order.
-  - The terminal and the HTML report show its `text`.
-- **Cost.** Two extra runs of each survivor's tests. On the sample, 31 survivors took the run from
-  6.0 s to 10.3 s.
-- **When off (the default).** The probe is not compiled in at all: `report.json` and the
-  instrumented classes are as before. Normal builds never carry Krispr code either way.
+See [diff-mode.md](diff-mode.md) for a sample GitHub Actions workflow that posts `pr-summary.md` on a
+pull request.

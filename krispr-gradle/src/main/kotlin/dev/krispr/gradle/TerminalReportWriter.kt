@@ -5,8 +5,7 @@ import java.io.File
 /**
  * The terminal summary printed at the end of `krisprRun`: a headline (mutants, killed, survived, no
  * coverage, score), then survivors grouped by file, each with its source line, the mutant as an inline
- * before/after, a one-line plain-English description (see [MutantReport.plainEnglish]) and, with
- * `showChanges`, what the mutant changed at its site. Survivors
+ * before/after and a one-line plain-English description (see [MutantReport.plainEnglish]). Survivors
  * are ordered by [MutantReport.priority] first, so the mutants most likely to be a real gap are read
  * first; NO_COVERAGE is summarised per file (a count), never listed mutant by mutant, since an uncovered
  * line usually means a whole untested function rather than one bug worth a line of its own.
@@ -47,51 +46,7 @@ internal object TerminalReportWriter {
             }
         }
 
-        append(testValueSection(report.testValue, color))
         append('\n').append("Report: ").append(reportFile).append('\n')
-    }
-
-    /**
-     * Per-test analysis (issue #14): tests that cover mutated code but kill nothing, and, with the kill
-     * matrix, redundant tests and a greedy minimal killing set. Worded as evidence ("kills 0 of N it
-     * covers"), never a verdict, since a test with no kills yet may still be documentation or a regression
-     * guard for something krispr does not mutate.
-     */
-    private fun testValueSection(tv: TestValueAnalysis.Result, color: Boolean): String {
-        if (tv.stats.isEmpty()) return ""
-        return buildString {
-            append('\n')
-            append(style("Test value:", BOLD, color))
-            append('\n')
-            if (!tv.killMatrix) {
-                append("  partial: only first-kill data; run with krispr.killMatrix=true for unique-kill, ")
-                append("redundancy and minimal-set analysis\n")
-            }
-            if (tv.noKills.isNotEmpty()) {
-                append("  kill nothing of what they cover:\n")
-                for (s in tv.noKills.sortedByDescending { it.covers }) {
-                    append("    ").append(s.name).append(": covers ").append(s.covers).append(", kills 0\n")
-                }
-            }
-            if (tv.killMatrix) {
-                if (tv.subsumedByOneTest.isNotEmpty()) {
-                    append("  every kill also killed by one other test:\n")
-                    for ((name, by) in tv.subsumedByOneTest) append("    ").append(name).append(" — also killed by ").append(by).append('\n')
-                }
-                if (tv.subsumedByRest.isNotEmpty()) {
-                    append("  every kill also killed by the rest of the suite (no single test):\n")
-                    for (name in tv.subsumedByRest) append("    ").append(name).append('\n')
-                }
-                tv.minimalSet?.takeIf { it.isNotEmpty() }?.let { set ->
-                    append("  minimal set killing the same ").append(tv.attributedKills).append(" mutants: ")
-                        .append(set.size).append(" of ").append(tv.stats.count { it.kills > 0 }).append(" tests")
-                    if (tv.minimalSetMillis != null && tv.fullMillis != null) {
-                        append(" (").append(tv.minimalSetMillis).append(" ms vs ").append(tv.fullMillis).append(" ms for all of them)")
-                    }
-                    append('\n').append("    ").append(set.joinToString(", ")).append('\n')
-                }
-            }
-        }
     }
 
     /**
@@ -125,7 +80,6 @@ internal object TerminalReportWriter {
                 .append(style(mutant.mutated, GREEN, color)).append("  ").append(style(mutant.operator, DIM, color))
             append('\n')
             append("      ").append(mutant.plainEnglish).append('\n')
-            mutant.change?.let { append("      ").append(style("what changed: ${it.text}", BOLD, color)).append('\n') }
             if (mutant.tests.isNotEmpty()) append("      ").append(style("tests: ${mutant.tests.joinToString(", ")}", DIM, color)).append('\n')
         }
     }

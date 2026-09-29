@@ -33,7 +33,6 @@ krispr {
     timeoutConstantMillis = 4000L  // 1.25 and 4000 are PIT's defaults
     timeoutMinimumMillis = 10000L  // no mutant run times out sooner; default 10000 with Robolectric tests (a fresh JVM's start-up on a busy host), none without
     operators = listOf("DEFAULTS", "SWAP_COLLECTION_CALL") // or -Pkrispr.operators=...; see [PHILOSOPHY.md](PHILOSOPHY.md#operators)
-    mode = "extreme"               // or -Pkrispr.mode=extreme; see Extreme mode
     historyFile = file("ci-cache/krispr-history.json") // default build/krispr/history.json
     useHistory = false             // or -Pkrispr.history=false: run every mutant, keep no history
     maxConcurrentJvms = 4          // krispr JVMs running at once across the whole build (or -Pkrispr.maxConcurrentJvms=4);
@@ -42,16 +41,7 @@ krispr {
     testProject = ":test"          // run another module's JVM tests, when tests live apart from the code
     androidVariant = "demoDebug"   // Android: the variant to mutate and test; default "debug"
     kotlinTarget = "android"       // KMP: which JVM or Android target; default the single JVM target
-    mutateComposables = true       // arid code (see below) is skipped unless turned back on; all default false
-    mutateLogging = true
-    mutateDependencyInjection = true
-    mutateToString = true
-    mutateEqualsHashCode = true
-    mutateTrivialGetters = true
-    mutateCaches = true
-    mutateDelays = true
-    mutateMetrics = true
-    mutateGenerated = true
+    mutate = listOf("toString")    // kinds of code skipped by default to mutate anyway; see tuning.md
 }
 ```
 

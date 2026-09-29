@@ -131,13 +131,10 @@ class MutationTransformer(
     private val sink: MutableList<Mutant>,
     private val ids: MutantIds,
     private val arid: AridCode = AridCode(),
-    operators: Set<Operator> = Operator.DEFAULTS,
-    /** Extreme mode: only [Operator.REMOVE_BODY], once per function. */
-    private val extreme: Boolean = false,
+    private val operators: Set<Operator> = Operator.DEFAULTS,
 ) : IrElementTransformerVoidWithContext() {
 
     private val builtIns = context.irBuiltIns
-    private val operators = if (extreme) setOf(Operator.REMOVE_BODY) else operators - Operator.REMOVE_BODY
     private val source: String? by lazy { File(file.path).takeIf { it.isFile }?.readText() }
 
     /** Lines ending in a `// krispr:ignore` comment: their mutants are dropped. */
@@ -147,7 +144,6 @@ class MutationTransformer(
 
     override fun visitFunctionNew(declaration: IrFunction): IrStatement = when {
         !isMutable(declaration) || arid.isArid(declaration) -> declaration
-        extreme -> declaration.also(::removeBody)
         else -> super.visitFunctionNew(declaration)
     }
 
@@ -166,11 +162,8 @@ class MutationTransformer(
         val property = declaration.correspondingPropertySymbol?.owner
         val mutable = declaration.origin in MUTABLE_FIELD_ORIGINS &&
             (property == null || (property.origin == IrDeclarationOrigin.DEFINED && !property.isConst))
-        return if (mutable && !extreme) super.visitFieldNew(declaration) else declaration
+        return if (mutable) super.visitFieldNew(declaration) else declaration
     }
-
-    override fun visitAnonymousInitializerNew(declaration: IrAnonymousInitializer): IrStatement =
-        if (extreme) declaration else super.visitAnonymousInitializerNew(declaration)
 
     override fun visitCall(expression: IrCall): IrExpression {
         if (arid.isArid(expression)) return expression
@@ -603,42 +596,11 @@ class MutationTransformer(
     /** `count = n → (removed)`: the receiver and value are still evaluated, only the store is skipped. */
     private fun removeAssignment(call: IrCall): IrExpression =
         rewrite(call, Operator.REMOVE_ASSIGNMENT, "${snippet(call)} → (removed)") { condition, _ ->
-            val temporaries = call.arguments.mapIndexed { index, argument ->
+            call.arguments.forEachIndexed { index, argument ->
                 argument?.let { irTemporary(it, nameHint = "krispr") }?.also { call.arguments[index] = irGet(it) }
             }
-            if (symbols.probes == null) {
-                +irIfThenElse(builtIns.unitType, condition, irGetObject(builtIns.unitClass), call)
-            } else {
-                val active = irTemporary(condition, nameHint = "krispr")
-                +irIfThenElse(builtIns.unitType, irGet(active), irGetObject(builtIns.unitClass), call)
-                probeAssignment(call, temporaries, active)
-            }
+            +irIfThenElse(builtIns.unitType, condition, irGetObject(builtIns.unitClass), call)
         }
-
-    /**
-     * The probe of an assignment: the property's backing field once the store ran or was skipped, when it
-     * is a field of the class the code is in (so the probe reads it directly, never through a getter);
-     * otherwise the value stored, or `(skipped)` when the mutant skipped the store.
-     */
-    private fun IrBlockBuilder.probeAssignment(call: IrCall, temporaries: List<IrVariable?>, active: IrVariable) {
-        val probes = symbols.probes ?: return
-        val id = siteId
-        val function = call.symbol.owner
-        val field = function.correspondingPropertySymbol?.owner?.backingField?.takeIf { it.parent == enclosingClass() && !it.isStatic }
-        val receiver = function.parameters.indexOfFirst { it.kind == IrParameterKind.DispatchReceiver }.takeIf { it >= 0 }?.let { temporaries[it] }
-        val stored = function.regularParameters.lastOrNull()?.let { temporaries[function.parameters.indexOf(it)] }
-        val observation = when {
-            field != null && receiver != null -> irCallMutants(symbols, probes.observe, irGetField(irGet(receiver), field))
-            stored != null -> irIfThenElse(
-                builtIns.unitType, irGet(active), irCallMutants(symbols, probes.observeSkipped), irCallMutants(symbols, probes.observe, irGet(stored)),
-            )
-            else -> return
-        }
-        +irIfThen(builtIns.unitType, irCallMutants(symbols, probes.isProbed, irInt(id)), observation)
-    }
-
-    /** The innermost class around the current scope. */
-    private fun enclosingClass(): IrClass? = allScopes.asReversed().firstNotNullOfOrNull { it.irElement as? IrClass }
 
     /**
      * A call statement whose result is Unit, as PIT's void method call removal: not arid, not a property
@@ -1756,25 +1718,6 @@ class MutationTransformer(
         else -> false
     }
 
-    /**
-     * Extreme mode: `if (Mutants.isActive(N)) return <default>` at the top of every named function, the
-     * default being Unit, zero, false, null or an empty String, collection, sequence or Flow. A function
-     * that returns another type, already returns only its default, or only makes arid calls gets no mutant.
-     */
-    private fun removeBody(function: IrFunction) {
-        if (function !is IrSimpleFunction || describeDeclaration(function) == null) return
-        val body = function.body as? IrBlockBody ?: return
-        val type = function.returnType
-        val (text, default) = defaultValue(type) ?: return
-        val only = body.statements.singleOrNull()
-        if (body.statements.isEmpty() || (only is IrReturn && isDefault(only.value, type))) return
-        // A body of nothing but logging, delays and metrics has nothing a test should notice.
-        if (body.statements.all { it is IrCall && (arid.isArid(it) || arid.isAridExceptLambdas(it)) }) return
-        val id = register(function, Operator.REMOVE_BODY, "${function.name.asString()}: body → return $text".replace("return Unit", "return")) ?: return
-        val builder = DeclarationIrBuilder(context, function.symbol, body.startOffset, body.startOffset)
-        body.statements.add(0, builder.irIfThen(builtIns.unitType, builder.irIsActive(symbols, id), builder.irReturn(builder.default())))
-    }
-
     private fun defaultValue(type: IrType): Pair<String, IrBuilderWithScope.() -> IrExpression>? = when {
         type.isUnit() -> "Unit" to { irGetObject(builtIns.unitClass) }
         type.isMarkedNullable() -> "null" to { irNull(type) }
@@ -1787,13 +1730,6 @@ class MutationTransformer(
         type.isFloat() -> "0f" to { IrConstImpl.float(startOffset, endOffset, type, 0f) }
         type.isChar() -> "'\\u0000'" to { IrConstImpl.char(startOffset, endOffset, type, '\u0000') }
         else -> emptyValue(type)
-    }
-
-    private fun isDefault(value: IrExpression, type: IrType): Boolean {
-        if (type.isUnit()) return value is IrGetObjectValue
-        if (isEmptyValue(value)) return true
-        val constant = (value as? IrConst)?.value
-        return value is IrConst && (constant == null || constant == false || constant == '\u0000' || (constant is Number && constant.toDouble() == 0.0))
     }
 
     private fun mutateArithmetic(call: IrCall): IrExpression {
@@ -1978,35 +1914,8 @@ class MutationTransformer(
         val builder = DeclarationIrBuilder(context, scope.scope.scopeOwnerSymbol, site.startOffset, site.endOffset)
         val start = startOf(site)
         return builder.irBlock(resultType = resultType) {
-            siteId = id
-            if (probesValue(operator, resultType)) probed(listOf(id), resultType) { body(irIsActive(symbols, id), parent) }
-            else body(irIsActive(symbols, id), parent)
+            body(irIsActive(symbols, id), parent)
         }.also { rewritten[it] = start }
-    }
-
-    /** The id of the site [rewrite] is building, for a body that probes on its own ([probeAssignment]). */
-    private var siteId = -1
-
-    /**
-     * Whether a site of [operator] gets a value probe: only with the `probe` option (showChanges), and only
-     * where the site's value tells what the mutant changed. REMOVE_ASSIGNMENT probes the stored field
-     * instead ([probeAssignment]); statements whose value nothing reads, and sites whose effect is not a
-     * value (a coroutine context, a swallowed exception), get none and are reported as not captured.
-     */
-    private fun probesValue(operator: Operator, type: IrType): Boolean =
-        symbols.probes != null && operator !in UNPROBED && !type.isUnit() && !type.makeNotNull().isNothing()
-
-    /**
-     * `{ val v = <site>; if (Mutants.isProbed(N)) Mutants.observe(v); v }` for each of [ids]: the value
-     * of the schema, with the mutant off or on, recorded when the runtime probes that mutant.
-     */
-    private fun IrBlockBuilder.probed(ids: List<Int>, type: IrType, body: IrBlockBuilder.() -> Unit) {
-        val probes = symbols.probes!!
-        val value = irTemporary(irBlock(resultType = type) { body() }, nameHint = "krispr")
-        for (id in ids) {
-            +irIfThen(builtIns.unitType, irCallMutants(symbols, probes.isProbed, irInt(id)), irCallMutants(symbols, probes.observe, irGet(value)))
-        }
-        +irGet(value)
     }
 
     /**
@@ -2024,10 +1933,8 @@ class MutationTransformer(
         if (ids.all { it == null }) return null
         val builder = DeclarationIrBuilder(context, scope.scope.scopeOwnerSymbol, site.startOffset, site.endOffset)
         val start = startOf(site)
-        val probed = mutants.indices.filter { ids[it] != null && probesValue(mutants[it].first, site.type) }.map { ids[it]!! }
         return builder.irBlock(resultType = site.type) {
-            if (probed.isNotEmpty()) probed(probed, site.type) { body(ids.map { id -> id?.let { irIsActive(symbols, it) } }) }
-            else body(ids.map { id -> id?.let { irIsActive(symbols, it) } })
+            body(ids.map { id -> id?.let { irIsActive(symbols, it) } })
         }.also { rewritten[it] = start }
     }
 
@@ -2175,16 +2082,6 @@ class MutationTransformer(
     private fun IrElement.hasOffsets(): Boolean = startOffset >= 0 && endOffset >= startOffset
 
     private companion object {
-        /**
-         * Operators whose site value does not show what the mutant changed: statements whose value nothing
-         * reads, a coroutine context or Flow operator, a swallowed exception, extreme mode's whole body.
-         * REMOVE_ASSIGNMENT has a probe of its own. showChanges reports these as not captured.
-         */
-        val UNPROBED = setOf(
-            Operator.REMOVE_CALL, Operator.SAFE_CALL_BODY, Operator.FLOW_EMIT, Operator.LAUNCH_BODY, Operator.CATCH_SWALLOW,
-            Operator.COROUTINE_CONTEXT, Operator.FLOW_OPERATOR, Operator.REMOVE_BODY, Operator.REMOVE_ASSIGNMENT,
-        )
-
         /** Functions with a name in the source: not lambdas and not default accessors. */
         val NAMED_FUNCTION_ORIGINS = setOf(IrDeclarationOrigin.DEFINED, IrDeclarationOrigin.LOCAL_FUNCTION)
 

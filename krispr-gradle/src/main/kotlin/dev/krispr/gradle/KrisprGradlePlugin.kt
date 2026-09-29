@@ -52,7 +52,6 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
         // timeoutMinimumMillis has no convention: unset, the run task picks Timeouts.defaultMinimum.
         extension.threads.convention(0)
         extension.maxConcurrentJvms.convention(0)
-        extension.forkJvmTuning.convention(KrisprForkTask.TUNING_AUTO)
         extension.androidVariant.convention("debug")
 
         val instrumenting = isInstrumenting(target)
@@ -246,13 +245,11 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
             val jvmSlots = project.gradle.sharedServices.registerIfAbsent(JvmSlots.NAME, JvmSlots::class.java) {}
             val maxConcurrentJvms = project.providers.gradleProperty("krispr.maxConcurrentJvms").map { it.trim().toInt() }
                 .orElse(extension.maxConcurrentJvms).orElse(0)
-            val forkJvmTuning = project.providers.gradleProperty("krispr.forkJvmTuning").orElse(extension.forkJvmTuning)
 
             fun KrisprForkTask.inheritTestTask() {
                 this.jvmSlots.set(jvmSlots)
                 usesService(jvmSlots)
                 this.maxConcurrentJvms.set(maxConcurrentJvms)
-                this.forkJvmTuning.set(forkJvmTuning)
                 this.testClasspath.from(testClasspath)
                 this.testClassesDirs.from(testClassesDirs)
                 javaLauncher.set(testTask.flatMap { it.javaLauncher })
@@ -290,8 +287,6 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
                 task.html.set(krisprDir.file("html/index.html"))
                 task.prSummary.set(krisprDir.file("pr-summary.md"))
                 task.sarif.set(krisprDir.file("krispr.sarif"))
-                task.diffMarkdown.set(krisprDir.file("diff.md"))
-                task.diffAnnotations.set(krisprDir.file("diff-annotations.json"))
             }
 
             project.tasks.register("krisprRun", KrisprRunTask::class.java) { task ->
@@ -314,8 +309,6 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
                 task.projectDirectory.set(project.layout.projectDirectory)
                 task.report.set(reportJson)
                 task.logsDirectory.set(krisprDir.dir("logs"))
-                task.mode.set(modeOf(project, extension))
-                task.showChanges.set(showChangesOf(project, extension))
                 task.historyFile.set(extension.historyFile.orElse(krisprDir.file("history.json")))
                 task.useHistory.set(project.providers.gradleProperty("krispr.history").map { it.toBoolean() }.orElse(extension.useHistory).orElse(true))
                 task.finalizedBy(report)
@@ -512,13 +505,10 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
 
         private fun taskPath(projectPath: String, taskName: String) = if (projectPath == ":") ":$taskName" else "$projectPath:$taskName"
 
-        /** Task options of krispr's tasks that take a value, which is not a task name. */
-        private val VALUE_OPTIONS = setOf("--since")
-
         /** (project path or null when unqualified, task name) for each requested task. */
         private fun requestedTasks(project: Project): List<Pair<String?, String>> {
             val arguments = project.gradle.startParameter.taskNames
-            return arguments.filterIndexed { i, it -> !it.startsWith("-") && arguments.getOrNull(i - 1) !in VALUE_OPTIONS }.map { request ->
+            return arguments.filter { !it.startsWith("-") }.map { request ->
                 val name = request.substringAfterLast(':')
                 val prefix = request.substringBeforeLast(':', missingDelimiterValue = "")
                 val path = when {

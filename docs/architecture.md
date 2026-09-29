@@ -136,7 +136,6 @@
     their cost and the share of equivalents in `SWAP_COLLECTION_CALL` (`firstOrNull → lastOrNull` on
     a unique key, `sorted` swaps). `COPY_ARG_DROP`, `PRECONDITION_REMOVAL`, `NAMED_DEFAULT_DROP` and
     `SEALED_WHEN_ROUTE` find no gap the defaults miss, so they stay opt-in too.
-  - `REMOVE_BODY`: extreme mode only (see [Extreme mode](usage.md#extreme-mode))
 - **Stable ids.** A mutant's id is the first 31 bits of SHA-256 over four things:
   - the file path relative to the root project
   - the enclosing declaration's fully qualified name, with parameter types, so overloads differ
@@ -220,7 +219,7 @@
   the code as written, before Compose adds `$composer`, `$changed`, groups and default masks. Without
   Compose the flag is a no-op. If Compose ran first, its code has no source offsets or operator
   origins and would still get no mutants. `AndroidGeneratedCodeTest` checks both orders. Composable
-  code itself is [arid](tuning.md#arid-code) by default, so this matters with `mutateComposables = true`.
+  code itself is [arid](tuning.md#arid-code) by default, so this matters with `mutate = listOf("composables")`.
 - **Robolectric** loads app and runtime classes again in its sandbox classloader. The sandboxed
   `Recorder` copy forwards every hit to the system classloader's copy, which knows the current
   test, and the sandboxed `Mutants` copy registers with the system copy to follow its active mutant.

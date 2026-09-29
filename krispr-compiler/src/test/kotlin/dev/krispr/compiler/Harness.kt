@@ -54,8 +54,7 @@ object Harness {
      * sources directory) get no mutants. [cliPlugins] loads krispr and the listed plugin jars through the
      * compiler's own `-Xplugin` loading instead (krispr last), which is where `-Xcompiler-plugin-order`
      * applies; in-memory registrars are always invoked in list order. [mutate] names the arid code
-     * categories ([AridCategory.option]) to mutate anyway; [operators] and [mode] are the `operator`
-     * and `mode` options. [probe] is the `probe` option (showChanges), left out when null.
+     * categories ([AridCategory.option]) to mutate anyway; [operators] are the `operator` options.
      */
     /** krispr-compiler's classes and resources (the service files) as the test runtime sees them. */
     private fun krisprPluginClasspath(): List<File> = listOf(
@@ -74,8 +73,6 @@ object Harness {
         cliPlugins: List<File>? = null,
         mutate: Set<String> = emptySet(),
         operators: List<String> = emptyList(),
-        mode: String? = null,
-        probe: Boolean? = null,
     ): Compiled {
         val workDir = Files.createTempDirectory("krispr-test").toFile()
         val manifest = File(workDir, "mutants.json")
@@ -95,7 +92,7 @@ object Harness {
                 "manifest" to manifest.absolutePath,
                 "root" to workDir.absolutePath,
             ) + excludedDirs.map { "excludeDir" to File(sourcesDir, it).absolutePath } + mutate.map { "mutate" to it } +
-                operators.map { "operator" to it } + listOfNotNull(mode?.let { "mode" to it }, probe?.let { "probe" to it.toString() })
+                operators.map { "operator" to it }
             if (cliPlugins == null) {
                 compilerPluginRegistrars = otherPlugins + KrisprCompilerPluginRegistrar()
                 commandLineProcessors = listOf(KrisprCommandLineProcessor())

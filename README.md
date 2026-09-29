@@ -77,8 +77,6 @@ Other things it does:
 - **Diff mode** (`diffBase`): mutates only the lines a PR changed. See [docs/diff-mode.md](docs/diff-mode.md)
   for a GitHub Actions workflow.
 - **Incremental runs**: reuses a verdict while the code and the tests behind it are unchanged.
-- **Extreme mode**: one mutant per function, which lists pseudo-tested functions.
-- **Test value**: which tests kill nothing that they cover.
 - **Arid code is skipped by default**: logging, DI wiring, `@Composable` bodies, caches, delays and
   metrics. See [docs/tuning.md](docs/tuning.md).
 
@@ -86,14 +84,14 @@ Other things it does:
 
 | Page | Contents |
 |---|---|
-| [docs/usage.md](docs/usage.md) | Samples, reports, statuses and scores, incremental, extreme and diff modes, test value |
+| [docs/usage.md](docs/usage.md) | Samples, reports, statuses and scores, incremental runs and diff mode |
 | [docs/setup.md](docs/setup.md) | Applying it to JVM, Android and KMP modules, every setting, Kotlin versions |
 | [docs/tuning.md](docs/tuning.md) | Arid code, excluding mutants, speed and test selection |
 | [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md) | Why each default is what it is, with the research behind it |
 | [docs/evidence.md](docs/evidence.md), [docs/validation.md](docs/validation.md) | Results on real projects |
 | [docs/architecture.md](docs/architecture.md) | How the plugin, the instrumented build and the runner fit together |
 | [docs/known-gaps.md](docs/known-gaps.md) | What it does not do yet |
-| [docs/kmp.md](docs/kmp.md), [docs/perf.md](docs/perf.md), [docs/dev-loop.md](docs/dev-loop.md) | Multiplatform, performance and development notes |
+| [docs/kmp.md](docs/kmp.md) | Multiplatform notes |
 
 ## Developing Krispr
 

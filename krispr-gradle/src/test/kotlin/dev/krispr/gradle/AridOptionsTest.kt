@@ -1,7 +1,10 @@
 package dev.krispr.gradle
 
 import org.gradle.testfixtures.ProjectBuilder
+import org.gradle.api.GradleException
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
@@ -13,9 +16,17 @@ class AridOptionsTest {
         val extension = project.objects.newInstance(KrisprExtension::class.java)
         assertEquals(emptyList<String>(), aridOptions(extension).map { it.value })
 
-        extension.mutateEqualsHashCode.set(true)
-        extension.mutateToString.set(true)
-        assertEquals(listOf("toString", "equalsHashCode"), aridOptions(extension).map { it.value })
+        extension.mutate.set(listOf("equalsHashCode", "toString"))
+        assertEquals(listOf("equalsHashCode", "toString"), aridOptions(extension).map { it.value })
+    }
+
+    @Test
+    fun `an unknown category fails the build and names the valid ones`(@TempDir dir: File) {
+        val project = ProjectBuilder.builder().withProjectDir(dir).build()
+        val extension = project.objects.newInstance(KrisprExtension::class.java)
+        extension.mutate.set(listOf("logs"))
+        val error = assertThrows(GradleException::class.java) { aridOptions(extension) }
+        assertTrue("'logs'" in error.message!! && "logging" in error.message!!, error.message)
     }
 
     /**

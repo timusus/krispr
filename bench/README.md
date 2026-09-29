@@ -19,7 +19,7 @@ of other projects; nothing here is part of the Krispr build.
 `results/` keeps the small outputs the doc quotes:
 
 - `head-to-head/`: per-target summaries, the blind sample, both raters, the adjudication and the key;
-- `diff-replay/`: per-commit results and `diff.md` comments, and the ratings of their survivors;
+- `diff-replay/`: per-commit results and PR comments (`diff.md`, written by the Krispr of the time; now `pr-summary.md`), and the ratings of their survivors;
 - `bugs/`: per-fix results.
 
 The runs need network access to Maven Central and GitHub, and PIT's jars in `$PIT_HOME` (see `run-pit.sh`).

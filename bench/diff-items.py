@@ -4,7 +4,7 @@
 Usage: diff-items.py <out items.jsonl> <target>|<repo clone>|<module>|<replay results.json> ...
 
 For each commit with survivors, adds a git worktree of the commit under <repo clone>-wt/<commit> (the
-source the survivor is on) and writes one item per survivor, at most 20 per commit: the cap diff.md posts.
+source the survivor is on) and writes one item per survivor, at most 20 per commit: the cap the PR comment posts.
 """
 import json
 import os

@@ -103,4 +103,39 @@ class PrSummaryWriterTest {
         val markdown = PrSummaryWriter.write(report)
         assertEquals("## krispr report\n\n**n/a** of covered mutants killed (n/a of valid).\n\nNo surviving mutants.\n", markdown)
     }
+
+    @Test
+    fun diffModeLeadsWithTheChangedLinesInsteadOfAScore(@TempDir dir: File) {
+        val report = ReportReader.read(fixtureReport(dir)).let { it.copy(summary = it.summary.copy(diffBase = "origin/main")) }
+        val markdown = PrSummaryWriter.write(report)
+
+        assertTrue(markdown.contains("10 mutants on lines changed since `origin/main`, 4 survived."), markdown)
+        assertFalse(markdown.contains("of covered mutants killed"), markdown)
+        assertTrue(markdown.contains("No test fails if `a < b` becomes `a <= b` at `src/main/kotlin/Foo.kt`:10"))
+    }
+
+    @Test
+    fun capsSurvivorsAcrossAllFiles() {
+        // Zero-padded so the file sort matches numeric order.
+        val mutants = (1..25).map { i ->
+            MutantReport(
+                id = i, file = "src/main/kotlin/File%02d.kt".format(i), line = i, column = 1, operator = "MATH",
+                description = "a + b → a - b", status = MutantStatus.SURVIVED,
+                tests = emptyList(), killedBy = null, millis = 0, runner = null, reason = null,
+            )
+        }
+        val report = Report(
+            summary = ReportSummary(
+                total = 25, wallMillis = 1, killed = 0, valid = 25, covered = 25,
+                mutationScore = 0, coveredScore = 0, counts = mapOf(MutantStatus.SURVIVED to 25), diffBase = "HEAD",
+            ),
+            mutants = mutants,
+            maxSurvivorsPerFile = 3,
+        )
+        val markdown = PrSummaryWriter.write(report)
+
+        assertTrue(markdown.contains("File20.kt"))
+        assertFalse(markdown.contains("File21.kt"), "the 21st survivor overall is left to the full report")
+        assertTrue(markdown.contains("_+5 more in other files, in the full report_"), markdown)
+    }
 }

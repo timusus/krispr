@@ -4,7 +4,7 @@ import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
  * Where a module's mutant runs spent their time: starting fresh JVMs, the test framework's set-up
- * (Robolectric building and resetting its sandbox), and the tests themselves. See docs/perf.md.
+ * (Robolectric building and resetting its sandbox), and the tests themselves. See docs/evidence.md, "Where an Android mutant's time goes".
  */
 internal class PhaseTimings {
     private val forks = ConcurrentLinkedQueue<ForkRunner.Timing>()

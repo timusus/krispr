@@ -107,7 +107,7 @@ noise or can't be killed. Google's arid heuristics raised the share of useful mu
   reason Krispr exists.
 - **Our own rules** (extrapolated, judgment): `@Composable` and `@Preview` bodies, DI declarations
   (Hilt/Dagger/Koin/Metro), `toString`, `equals`/`hashCode`, trivial getters, and `@Generated` code. Every category has an
-  opt-out (`mutateCaches`, `mutateDelays`, `mutateMetrics`, and so on).
+  opt-out (`mutate = listOf("caches", "delays", "metrics")`, and so on).
 - **Project rules:** a trailing `// krispr:ignore` drops the mutants of a line, and a `.krispr-exclude`
   file drops them by file, class, function, operator or line range.
 - **Provably equivalent mutants** (PIT filters the same): `x + 0 → x - 0` on whole numbers
@@ -149,10 +149,6 @@ Opt-in, because they add many mutants for few new survivors: empty returns (`""`
 kotlinpoet they and chain call removal added 459 mutants; of 15 sampled new survivors 9 were real test
 gaps, 6 could not be caught and none was junk.
 
-**Extreme mode** (Descartes, an engine for PIT) makes one mutant per function that removes the whole
-body. It answers a coarser question, "which covered functions could be deleted without a test
-noticing?", so it lists pseudo-tested functions and gives no score.
-
 ## Cost
 
 A run does only the work that can change a verdict. Verdicts are reused across runs under PIT 1.14.0's
@@ -165,7 +161,7 @@ default to PIT's `1.25 × time + 4000 ms`.
 ## Form of output
 
 Diff mode (mutate only changed lines, cap the survivors reported per file) is the only form proven at
-industrial scale. It is the intended primary use: `krisprRun --since <ref>` or `diffBase` mutates the lines
+industrial scale. It is the intended primary use: `diffBase` mutates the lines
 changed since the merge base, and the summary prints at most `maxSurvivorsPerFile` (default 3) survivors
 per file, in line order. Whole-module runs are for baselines and exploration.
 

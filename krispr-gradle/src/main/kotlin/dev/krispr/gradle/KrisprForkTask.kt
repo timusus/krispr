@@ -1,7 +1,6 @@
 package dev.krispr.gradle
 
 import org.gradle.api.DefaultTask
-import org.gradle.api.GradleException
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.provider.ListProperty
@@ -30,9 +29,6 @@ abstract class KrisprForkTask : DefaultTask() {
 
     @get:Internal abstract val workingDirectory: DirectoryProperty
 
-    /** See [KrisprExtension.forkJvmTuning]: [TUNING_AUTO] or [TUNING_OFF]. */
-    @get:Input abstract val forkJvmTuning: Property<String>
-
     /** The build-wide count of running krispr JVMs; see [JvmSlots]. */
     @get:Internal abstract val jvmSlots: Property<JvmSlots>
 
@@ -59,16 +55,6 @@ abstract class KrisprForkTask : DefaultTask() {
         environment = environment.get(),
         workingDir = workingDirectory.get().asFile.apply { mkdirs() },
         logs = logs,
-        tuned = when (val value = forkJvmTuning.get().trim().lowercase()) {
-            TUNING_AUTO -> true
-            TUNING_OFF -> false
-            else -> throw GradleException("krispr: forkJvmTuning is '$value'; use '$TUNING_AUTO' or '$TUNING_OFF'.")
-        },
         debug = { logger.debug(it) },
     )
-
-    companion object {
-        const val TUNING_AUTO = "auto"
-        const val TUNING_OFF = "off"
-    }
 }

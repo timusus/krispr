@@ -15,8 +15,6 @@ abstract class KrisprRegistrarBase : CompilerPluginRegistrar() {
         val excluded = configuration.get(KrisprConfigurationKeys.EXCLUDE_DIRS).orEmpty().map(::File)
         val arid = AridCode(configuration.get(KrisprConfigurationKeys.MUTATE_ARID).orEmpty())
         val operators = Operator.select(configuration.get(KrisprConfigurationKeys.OPERATORS).orEmpty()) ?: Operator.DEFAULTS
-        val extreme = configuration.get(KrisprConfigurationKeys.EXTREME) ?: false
-        val probe = configuration.get(KrisprConfigurationKeys.PROBE) ?: false
-        IrGenerationExtension.registerExtension(KrisprIrGenerationExtension(File(manifest), root, excluded, arid, operators, extreme, probe))
+        IrGenerationExtension.registerExtension(KrisprIrGenerationExtension(File(manifest), root, excluded, arid, operators))
     }
 }

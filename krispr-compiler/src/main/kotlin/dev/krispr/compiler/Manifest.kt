@@ -111,8 +111,6 @@ enum class Operator(val default: Boolean = true) {
      * case is handled as if it were another. Never towards a body that relies on a smart cast of the subject.
      */
     SEALED_WHEN_ROUTE(default = false),
-    /** Extreme mode only: the whole body of a function returns a default value. */
-    REMOVE_BODY(default = false),
     ;
 
     companion object {
@@ -128,7 +126,7 @@ enum class Operator(val default: Boolean = true) {
             for (name in names) {
                 val upper = name.trim().uppercase()
                 if (upper == "DEFAULTS") selected += DEFAULTS
-                else selected += entries.firstOrNull { it.name == upper && it != REMOVE_BODY } ?: return null
+                else selected += entries.firstOrNull { it.name == upper } ?: return null
             }
             return selected
         }

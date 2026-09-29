@@ -39,20 +39,10 @@ class ForkRunnerTest {
     }
 
     @Test
-    fun forkJvmTuningOffKeepsTheTieredDefault(@TempDir dir: File) {
-        assertEquals(4L, flag(dir, emptyList(), "TieredStopAtLevel", tuned = false))
-    }
-
-    @Test
     fun workersRunC1OnlyToo(@TempDir dir: File) {
-        val log = workerFlags(dir, tuned = true)
+        val log = workerFlags(dir)
         assertEquals(1L, flagValue(log, "TieredStopAtLevel"))
         assertEquals(240L shl 20, flagValue(log, "ReservedCodeCacheSize"))
-    }
-
-    @Test
-    fun forkJvmTuningOffKeepsWorkersTiered(@TempDir dir: File) {
-        assertEquals(4L, flagValue(workerFlags(dir, tuned = false), "TieredStopAtLevel"))
     }
 
     /** A Robolectric kill, kept for a health check: the worker stays usable and says the check is due. */
@@ -64,7 +54,7 @@ class ForkRunnerTest {
         assertTrue(worker.needsHealthCheck)
     }
 
-    /** `robolectricKeepAfterKill = false`: a Robolectric kill retires the worker, as before the health check. */
+    /** Without `keepAfterFrameworkFailure`, a Robolectric kill retires the worker. */
     @Test
     fun aFrameworkFailureRetiresTheWorkerWhenNotKept(@TempDir dir: File) = withWorker(dir, Reply(1, FRAMEWORK_FAILURE)) { worker, _ ->
         worker.run("mutant-1", 1, listOf("t"), 10_000, failFast = true, keepAfterFrameworkFailure = false)
@@ -163,17 +153,17 @@ class ForkRunnerTest {
     private fun reservedCodeCache(dir: File, testJvmArgs: List<String>): Long = flag(dir, testJvmArgs, "ReservedCodeCacheSize")
 
     /** A flag's value in the fork: `-version` makes the JVM exit before it looks for the runner. */
-    private fun flag(dir: File, testJvmArgs: List<String>, name: String, tuned: Boolean = true): Long {
+    private fun flag(dir: File, testJvmArgs: List<String>, name: String): Long {
         val java = File(System.getProperty("java.home"), "bin/java").absolutePath
-        val runner = ForkRunner(java, "", "", testJvmArgs + listOf("-XX:+PrintFlagsFinal", "-version"), emptyMap(), dir, dir, tuned)
+        val runner = ForkRunner(java, "", "", testJvmArgs + listOf("-XX:+PrintFlagsFinal", "-version"), emptyMap(), dir, dir)
         val result = runner.run("record", null, emptyList(), 60_000)
         return flagValue(result.log, name)
     }
 
     /** The log of a worker JVM that prints its flags and exits after `-version` without connecting. */
-    private fun workerFlags(dir: File, tuned: Boolean): File {
+    private fun workerFlags(dir: File): File {
         val java = File(System.getProperty("java.home"), "bin/java").absolutePath
-        val runner = ForkRunner(java, "", "", listOf("-XX:+PrintFlagsFinal", "-version"), emptyMap(), dir, dir, tuned)
+        val runner = ForkRunner(java, "", "", listOf("-XX:+PrintFlagsFinal", "-version"), emptyMap(), dir, dir)
         assertNull(runner.startWorker("worker", emptyList(), connectMillis = 5_000))
         return File(dir, "worker.log")
     }

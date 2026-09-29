@@ -156,6 +156,16 @@ published plugin never pays that. Krispr also compiles the module once more with
 the ordinary build.
 
 
+### Where an Android mutant's time goes
+
+On `sample-android`'s `:lib` (one Robolectric test class and one plain one, measured earlier on a 10-core
+host at load 8), a mutant that a Robolectric test reaches took 5.9 to 6.6 s in a fresh JVM. Building
+Robolectric's sandbox was 5.1 to 5.7 s of that, about 86%; starting the JVM was 76 to 85 ms, about 1%; the
+tests were 0.7 s. A worker that already holds a sandbox sets it up again in 11 to 12 ms. So Krispr keeps the
+sandbox between mutants (`robolectric = "reuse"`), not just the JVM, and a Robolectric module's runs are slow
+mainly when mutants are killed or need a fresh JVM. Running Krispr's own test JVMs with the C1 compiler only,
+which it does by itself, cut a worker's CPU time by 40% on the same sample.
+
 ## 2. Diff mode on real pull requests
 
 Diff mode is the intended use: mutate only the lines a pull request changed, and post the survivors. It was
@@ -273,7 +283,7 @@ Ordered by how much of what this page measured each would change.
    JVM. Measure how often the retry changes a verdict. If it never does on plain JVM tests, run it only
    where Robolectric or a timing check says the worker is suspect.
 2. **Hand-written `equals`/`hashCode`.** Krispr skipped them, and both a real gap (kotlin-result) and a
-   real bug (kotlinpoet `d6e3b13a`) sat in one. They can now be mutated with `mutateEqualsHashCode`;
+   real bug (kotlinpoet `d6e3b13a`) sat in one. They can now be mutated with `mutate = listOf("equalsHashCode")`;
    measure the survivors that adds on real targets before deciding whether it should be the default.
 3. **Return values of generic and other types.** turbine's `withTurbineTimeout` returning `null` is a real
    gap Krispr cannot express.

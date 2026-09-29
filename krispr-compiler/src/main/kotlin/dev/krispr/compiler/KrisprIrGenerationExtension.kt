@@ -17,9 +17,6 @@ class KrisprIrGenerationExtension(
     excludedDirs: List<File> = emptyList(),
     private val arid: AridCode = AridCode(),
     private val operators: Set<Operator> = Operator.DEFAULTS,
-    private val extreme: Boolean = false,
-    /** Emit value probes for showChanges; see MutationTransformer.probe. */
-    private val probe: Boolean = false,
 ) : IrGenerationExtension {
     /**
      * Sources generated into the build directory (KSP, kapt stubs, Room, Moshi, SafeArgs, SQLDelight)
@@ -32,8 +29,8 @@ class KrisprIrGenerationExtension(
         val ids = MutantIds(root)
         for (file in moduleFragment.files) {
             if (isExcluded(file.path)) continue
-            val symbols = KrisprSymbols.resolve(pluginContext, file, probe && !extreme)
-            file.transform(MutationTransformer(pluginContext, symbols, file, mutants, ids, arid, operators, extreme), null)
+            val symbols = KrisprSymbols.resolve(pluginContext, file)
+            file.transform(MutationTransformer(pluginContext, symbols, file, mutants, ids, arid, operators), null)
             if (System.getProperty("krispr.dumpIr") != null) println(file.dump())
         }
         Manifest.write(manifest, mutants)

@@ -26,8 +26,6 @@ internal class ForkRunner(
     private val environment: Map<String, String>,
     private val workingDir: File,
     private val logs: File,
-    /** Whether forks and workers get [TUNED_JVM_ARGS]; see `KrisprExtension.forkJvmTuning`. */
-    private val tuned: Boolean = true,
     /** Gets one line per JVM start and per run with its phase timing; see [PhaseTimings]. */
     private val debug: (String) -> Unit = {},
 ) {
@@ -101,7 +99,7 @@ internal class ForkRunner(
             if (failFast) add("-Dkrispr.failFast=true")
         }
         val spawned = System.currentTimeMillis()
-        val process = start(tuning(), extra, FORKED_RUNNER, selectorFile.absolutePath, log)
+        val process = start(TUNED_JVM_ARGS, extra, FORKED_RUNNER, selectorFile.absolutePath, log)
         val started = System.nanoTime()
         val finished = process.waitFor(timeoutMillis, TimeUnit.MILLISECONDS)
         if (!finished) destroy(process)
@@ -136,7 +134,7 @@ internal class ForkRunner(
         val server = ServerSocket(0, 1, InetAddress.getLoopbackAddress())
         val process = try {
             start(
-                tuning(),
+                TUNED_JVM_ARGS,
                 listOf("-D$ISOLATED_PROPERTY=${isolated.joinToString(File.pathSeparator) { it.absolutePath }}"),
                 MUTANT_WORKER,
                 server.localPort.toString(),
@@ -265,8 +263,6 @@ internal class ForkRunner(
     private fun readTiming(log: File): Timing? = if (!log.isFile) null else log.useLines { lines ->
         lines.lastOrNull { it.startsWith(TIMING_MARKER) }?.let { Timing.parse(it.removePrefix(TIMING_MARKER), null) }
     }
-
-    private fun tuning() = if (tuned) TUNED_JVM_ARGS else emptyList()
 
     /** [defaultJvmArgs] go before the test task's JVM arguments, [extraJvmArgs] after them. */
     private fun start(defaultJvmArgs: List<String>, extraJvmArgs: List<String>, mainClass: String, argument: String, log: File): Process {

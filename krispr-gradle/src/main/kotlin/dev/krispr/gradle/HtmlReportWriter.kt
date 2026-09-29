@@ -29,7 +29,6 @@ internal object HtmlReportWriter {
                 append(overviewSection(byFile, fileIds))
                 append(filterSection(operators))
             }
-            append(testValueSection(report.testValue))
             append("<main>\n")
             for ((file, mutants) in byFile) {
                 append(fileSection(file, fileIds.getValue(file), mutants, projectDirectory))
@@ -91,54 +90,6 @@ internal object HtmlReportWriter {
             if (count == 0) "" else "<span class=\"seg $cls\" style=\"width:${count * 100.0 / total}%\" title=\"$count $cls\"></span>"
         return "<div class=\"bar\">" + segment(survived, "SURVIVED") + segment(noCoverage, "NO_COVERAGE") +
             segment(other, "OTHER") + segment(killed, "KILLED") + "</div>"
-    }
-
-    /**
-     * Per-test analysis (issue #14): tests that cover mutated code but kill nothing, and, with the kill
-     * matrix, redundant tests and a greedy minimal killing set. Evidence-worded ("kills 0 of N covered"),
-     * never a verdict.
-     */
-    private fun testValueSection(tv: TestValueAnalysis.Result): String {
-        if (tv.stats.isEmpty()) return ""
-        return buildString {
-            append("<section class=\"testvalue\">\n<h2>Test value</h2>\n")
-            if (!tv.killMatrix) {
-                append("<p class=\"hint\">Partial: only first-kill data recorded. Run with ")
-                append("<code>krispr.killMatrix=true</code> for unique-kill, redundancy and minimal-set analysis.</p>\n")
-            }
-            if (tv.noKills.isNotEmpty()) {
-                append("<h3>Kill nothing of what they cover</h3>\n<ul>\n")
-                for (s in tv.noKills.sortedByDescending { it.covers }) {
-                    append("<li><code>${escape(s.name)}</code>: covers ${s.covers}, kills 0</li>\n")
-                }
-                append("</ul>\n")
-            }
-            if (tv.killMatrix) {
-                if (tv.subsumedByOneTest.isNotEmpty()) {
-                    append("<h3>Every kill also killed by one other test</h3>\n<ul>\n")
-                    for ((name, by) in tv.subsumedByOneTest) {
-                        append("<li><code>${escape(name)}</code> — also killed by <code>${escape(by)}</code></li>\n")
-                    }
-                    append("</ul>\n")
-                }
-                if (tv.subsumedByRest.isNotEmpty()) {
-                    append("<h3>Every kill also killed by the rest of the suite</h3>\n<ul>\n")
-                    for (name in tv.subsumedByRest) append("<li><code>${escape(name)}</code></li>\n")
-                    append("</ul>\n")
-                }
-                tv.minimalSet?.takeIf { it.isNotEmpty() }?.let { set ->
-                    append("<h3>Minimal killing set</h3>\n<p>")
-                    append("${set.size} of ${tv.stats.count { it.kills > 0 }} tests kill the same ${tv.attributedKills} mutants")
-                    if (tv.minimalSetMillis != null && tv.fullMillis != null) {
-                        append(" (${tv.minimalSetMillis} ms vs ${tv.fullMillis} ms for every test that kills at least one mutant)")
-                    }
-                    append(".</p>\n<ul>\n")
-                    for (name in set) append("<li><code>${escape(name)}</code></li>\n")
-                    append("</ul>\n")
-                }
-            }
-            append("</section>\n")
-        }
     }
 
     private fun filterSection(operators: List<String>): String = buildString {
@@ -206,8 +157,7 @@ internal object HtmlReportWriter {
         return "<span class=\"operator\">${escape(mutant.operator)}</span> " +
             "<code>${escape(mutant.original)}</code> → <code>${escape(mutant.mutated)}</code> " +
             "<span class=\"badge status-${mutant.status.name}\">${mutant.status.name}</span>$killedBy$reason" +
-            "<div class=\"plain\">${escape(mutant.plainEnglish)}</div>" +
-            (mutant.change?.let { "<div class=\"change change-${escape(it.verdict)}\">What changed: ${escape(it.text)}</div>" } ?: "")
+            "<div class=\"plain\">${escape(mutant.plainEnglish)}</div>"
     }
 
     private fun escape(text: String): String = text
@@ -253,11 +203,6 @@ internal object HtmlReportWriter {
         |.bar .seg.NO_COVERAGE { background: var(--nocoverage); }
         |.bar .seg.KILLED { background: var(--killed); }
         |.bar .seg.OTHER { background: var(--muted); }
-        |.testvalue { padding: 12px 20px; border-bottom: 1px solid var(--border); font-size: 13px; }
-        |.testvalue h2 { font-size: 16px; margin: 0 0 6px; }
-        |.testvalue h3 { font-size: 13px; margin: 12px 0 4px; }
-        |.testvalue ul { margin: 4px 0; padding-left: 20px; }
-        |.testvalue code { font-family: ui-monospace, Menlo, Consolas, monospace; }
         |.filters { padding: 8px 20px; border-bottom: 1px solid var(--border); font-size: 13px; }
         |.filter-group { margin-bottom: 6px; }
         |.filters label { margin-right: 10px; display: inline-block; }
@@ -288,8 +233,6 @@ internal object HtmlReportWriter {
         |.badge.status-UNKNOWN { background: var(--unknown); }
         |.badge.status-RUN_ERROR { background: var(--runerror); }
         |.plain { color: var(--muted); margin-top: 2px; }
-        |.change { margin-top: 2px; font-family: ui-monospace, monospace; }
-        |.change-same, .change-typeOnly, .change-notCaptured { color: var(--muted); }
         |tr.mutant.hidden, tr.line.hidden, tr.mutant.filtered-out, tr.mutant.collapsed { display: none; }
         |tr.line.current td.code { outline: 2px solid var(--unknown); outline-offset: -2px; }
         |@media (max-width: 480px) {

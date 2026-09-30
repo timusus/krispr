@@ -1,0 +1,102 @@
+From 2a200b5861b461fd2bdface2872b158c09cabd96 Mon Sep 17 00:00:00 2001
+From: Krispr bench <bench@krispr.dev>
+Date: Wed, 30 Sep 2026 01:39:42 +0000
+Subject: [PATCH 2/2] Format month names and AM/PM in the locale that is passed
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+toFormattedDateStyle, toFormattedTimeStyle and toFormattedDateTimeStyle took
+the locale's pattern but formatted it with the default locale, so a US pattern
+came out as "décembre 10, 2023" on a French device. The plan screen formats
+its billing dates with Locale.US and showed exactly that.
+---
+ .../data/util/TemporalAccessorExtensions.kt   |  9 ++++--
+ .../util/TemporalAccessorExtensionsTest.kt    | 28 +++++++++++++++++++
+ 2 files changed, 35 insertions(+), 2 deletions(-)
+
+diff --git a/core/src/main/kotlin/com/bitwarden/core/data/util/TemporalAccessorExtensions.kt b/core/src/main/kotlin/com/bitwarden/core/data/util/TemporalAccessorExtensions.kt
+index a372010..bd63574 100644
+--- a/core/src/main/kotlin/com/bitwarden/core/data/util/TemporalAccessorExtensions.kt
++++ b/core/src/main/kotlin/com/bitwarden/core/data/util/TemporalAccessorExtensions.kt
+@@ -9,12 +9,14 @@ import java.time.temporal.TemporalAccessor
+ import java.util.Locale
+ 
+ /**
+- * Converts the [TemporalAccessor] to a formatted string based on the provided pattern and timezone.
++ * Converts the [TemporalAccessor] to a formatted string based on the provided pattern, locale and
++ * timezone. The locale supplies the text of the pattern's fields, such as month names and AM/PM.
+  */
+ fun TemporalAccessor.toFormattedPattern(
+     pattern: String,
+     clock: Clock = Clock.systemDefaultZone(),
+-): String = DateTimeFormatter.ofPattern(pattern).withZone(clock.zone).format(this)
++    locale: Locale = Locale.getDefault(),
++): String = DateTimeFormatter.ofPattern(pattern, locale).withZone(clock.zone).format(this)
+ 
+ /**
+  * Converts the [TemporalAccessor] to a formatted date string based on the provided style, locale,
+@@ -39,6 +41,7 @@ fun TemporalAccessor.toFormattedDateStyle(
+             locale,
+         ),
+         clock = clock,
++        locale = locale,
+     )
+ 
+ /**
+@@ -64,6 +67,7 @@ fun TemporalAccessor.toFormattedTimeStyle(
+             locale,
+         ),
+         clock = clock,
++        locale = locale,
+     )
+ 
+ /**
+@@ -84,4 +88,5 @@ fun TemporalAccessor.toFormattedDateTimeStyle(
+             locale,
+         ),
+         clock = clock,
++        locale = locale,
+     )
+diff --git a/core/src/test/kotlin/com/bitwarden/core/data/util/TemporalAccessorExtensionsTest.kt b/core/src/test/kotlin/com/bitwarden/core/data/util/TemporalAccessorExtensionsTest.kt
+index 5790e0e..ad25caf 100644
+--- a/core/src/test/kotlin/com/bitwarden/core/data/util/TemporalAccessorExtensionsTest.kt
++++ b/core/src/test/kotlin/com/bitwarden/core/data/util/TemporalAccessorExtensionsTest.kt
+@@ -23,6 +23,34 @@ class TemporalAccessorExtensionsTest {
+         )
+     }
+ 
++    @Test
++    fun `toFormattedDateStyle should use the given locale for month names, not the default one`() {
++        val instant = Instant.parse("2023-12-10T15:30:00Z")
++        val defaultLocale = Locale.getDefault()
++        Locale.setDefault(Locale.FRANCE)
++        try {
++            assertEquals(
++                "December 10, 2023",
++                instant.toFormattedDateStyle(
++                    dateStyle = FormatStyle.LONG,
++                    locale = Locale.US,
++                    clock = FIXED_CLOCK,
++                ),
++            )
++            assertEquals(
++                "Dec 10, 2023, 3:30:00\u202FPM",
++                instant.toFormattedDateTimeStyle(
++                    dateStyle = FormatStyle.MEDIUM,
++                    timeStyle = FormatStyle.MEDIUM,
++                    locale = Locale.US,
++                    clock = FIXED_CLOCK,
++                ),
++            )
++        } finally {
++            Locale.setDefault(defaultLocale)
++        }
++    }
++
+     @Test
+     fun `toFormattedDateStyle should return correctly formatted string with with locale`() {
+         val instant = Instant.parse("2023-12-10T15:30:00Z")
+-- 
+2.43.0
+

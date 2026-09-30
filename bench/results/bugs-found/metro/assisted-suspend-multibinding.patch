@@ -1,0 +1,89 @@
+From e17e58403ff4e13d97cfebff067c5eddc2cac935 Mon Sep 17 00:00:00 2001
+From: Krispr bench <bench@krispr.dev>
+Date: Wed, 30 Sep 2026 02:55:51 +0000
+Subject: [PATCH] Report a wrapped suspend multibinding at an assisted target
+ only once
+
+A graph binding that depends on a Provider- or Lazy-wrapped multibinding over
+suspend bindings gets MULTIBINDING_OVER_SUSPEND_BINDINGS alone:
+validateDependencyWrappers skips suspend multibindings, which validateMultibindings
+already reports with a more specific message. An assisted target's constructor or
+member dependency had no such skip, so it also got
+SUSPEND_BINDING_WRAPPED_IN_PROVIDER (or _LAZY), whose advice to use a suspend
+function type instead does not work for a multibinding over suspend bindings.
+---
+ .../compiler/graph/SuspendBindingValidator.kt |  5 +++-
+ .../graph/SuspendBindingValidatorTest.kt      | 27 +++++++++++++++++++
+ 2 files changed, 31 insertions(+), 1 deletion(-)
+
+diff --git a/metro-common/src/main/kotlin/dev/zacsweers/metro/compiler/graph/SuspendBindingValidator.kt b/metro-common/src/main/kotlin/dev/zacsweers/metro/compiler/graph/SuspendBindingValidator.kt
+index 8895ae7..443d0bd 100644
+--- a/metro-common/src/main/kotlin/dev/zacsweers/metro/compiler/graph/SuspendBindingValidator.kt
++++ b/metro-common/src/main/kotlin/dev/zacsweers/metro/compiler/graph/SuspendBindingValidator.kt
+@@ -68,7 +68,7 @@ public class SuspendBindingValidator<
+     validateGraphRequests(analysis, suspendMultibindings, issues)
+     validateMemberInjection(analysis, issues)
+     validateDependencyWrappers(analysis, suspendMultibindings, issues)
+-    validateAssistedFactories(analysis, issues)
++    validateAssistedFactories(analysis, suspendMultibindings, issues)
+ 
+     val runtimeRequirement = runtimeRequirement(analysis)
+     if (runtimeRequirement.required && !runtimeCoroutinesAvailable) {
+@@ -402,6 +402,7 @@ public class SuspendBindingValidator<
+    */
+   private fun validateAssistedFactories(
+     analysis: SuspendBindingAnalysisResult<TypeKey, ContextualTypeKey>,
++    suspendMultibindings: Set<TypeKey>,
+     issues: MutableList<SuspendValidationIssue<TypeKey, ContextualTypeKey, Binding, Request>>,
+   ) {
+     bindings.forEachValue { binding ->
+@@ -412,6 +413,8 @@ public class SuspendBindingValidator<
+         }
+       for (dependency in assisted.constructorDependencies + assisted.memberDependencies) {
+         if (dependency.typeKey !in analysis.suspendKeys) continue
++        // validateMultibindings already reported these with a more specific message.
++        if (dependency.typeKey in suspendMultibindings) continue
+         if (rules.isValidBoundary(dependency)) continue
+         val blockingWrapper = dependency.wrappedType.lowestSynchronousWrapperName() ?: continue
+         issues += blockingWrapperIssue(dependency, blockingWrapper, "depend on", binding, analysis)
+diff --git a/metro-common/src/test/kotlin/dev/zacsweers/metro/compiler/graph/SuspendBindingValidatorTest.kt b/metro-common/src/test/kotlin/dev/zacsweers/metro/compiler/graph/SuspendBindingValidatorTest.kt
+index 269c4b0..c7d0a75 100644
+--- a/metro-common/src/test/kotlin/dev/zacsweers/metro/compiler/graph/SuspendBindingValidatorTest.kt
++++ b/metro-common/src/test/kotlin/dev/zacsweers/metro/compiler/graph/SuspendBindingValidatorTest.kt
+@@ -100,6 +100,33 @@ class SuspendBindingValidatorTest {
+     }
+   }
+ 
++  @Test
++  fun `assisted targets report a wrapped suspend multibinding only as a multibinding`() {
++    for ((request, type) in listOf("() -> Set<Source>" to "Set<Source>", "Lazy<Map<String, Source>>" to "Map<String, Source>")) {
++      val fixture = ValidationFixture(runtimeCoroutinesAvailable = true)
++      fixture.put(
++        binding("Source", isSuspend = true),
++        binding(type, "Source", multibinding = SuspendMultibindingMetadata(isSet = type.startsWith("Set<"))),
++        binding(
++          "Factory",
++          "() -> $type",
++          assistedFactory =
++            SuspendAssistedFactoryMetadata(
++              factoryName = "Target.Factory",
++              targetName = "Target",
++              functionName = "create",
++              functionIsSuspend = true,
++              constructorDependencies = listOf(contextKey(request)),
++            ),
++        ),
++      )
++
++      // As for any other consumer: a wrapper cannot make a multibinding over suspend bindings work.
++      assertThat(fixture.validate(request("Factory")).issues.map { it.diagnosticId })
++        .containsExactly(MetroDiagnosticId.MULTIBINDING_OVER_SUSPEND_BINDINGS)
++    }
++  }
++
+   @Test
+   fun `assisted targets can consume maps of suspend providers`() {
+     val fixture = ValidationFixture(runtimeCoroutinesAvailable = true)
+-- 
+2.43.0
+

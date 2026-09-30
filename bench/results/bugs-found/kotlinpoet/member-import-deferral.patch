@@ -1,0 +1,82 @@
+From d8f577310791b06bedf8d934e76f25609570399b Mon Sep 17 00:00:00 2001
+From: Krispr bench <bench@krispr.dev>
+Date: Wed, 30 Sep 2026 00:25:32 +0000
+Subject: [PATCH] Don't drop a member-imported type followed by an indent or
+ statement marker
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+CodeWriter defers a %T whose class has a member import, until the next plain
+format part shows whether it is a member reference. When the next part was
+⇥, ⇤, « or », those have cases of their own that never emit the deferred type,
+so the type was written after later arguments, or not at all when the code
+block ended there.
+---
+ .../com/squareup/kotlinpoet/CodeWriter.kt     |  7 ++++-
+ .../kotlinpoet/MemberImportDeferralTest.kt    | 28 +++++++++++++++++++
+ 2 files changed, 34 insertions(+), 1 deletion(-)
+ create mode 100644 kotlinpoet/src/jvmTest/kotlin/com/squareup/kotlinpoet/MemberImportDeferralTest.kt
+
+diff --git a/kotlinpoet/src/jvmMain/kotlin/com/squareup/kotlinpoet/CodeWriter.kt b/kotlinpoet/src/jvmMain/kotlin/com/squareup/kotlinpoet/CodeWriter.kt
+index 87bc3c68..84a1b896 100644
+--- a/kotlinpoet/src/jvmMain/kotlin/com/squareup/kotlinpoet/CodeWriter.kt
++++ b/kotlinpoet/src/jvmMain/kotlin/com/squareup/kotlinpoet/CodeWriter.kt
+@@ -21,6 +21,9 @@ import kotlin.math.min
+ /** Sentinel value that indicates that no user-provided package has been set. */
+ private val NO_PACKAGE = String()
+ 
++/** Format parts [CodeWriter.emitCode] handles in cases of their own, which never emit a deferred type. */
++private val NO_ARG_PLACEHOLDERS = setOf("⇥", "⇤", "«", "»")
++
+ internal val NULLABLE_ANY = ANY.copy(nullable = true)
+ 
+ private const val ESCAPED_STAR = "&#42;"
+@@ -308,7 +311,9 @@ internal class CodeWriter(
+           // defer "typeName.emit(this)" if next format part will be handled by the default case
+           var defer = false
+           if (typeName is ClassName && partIterator.hasNext()) {
+-            if (!codeBlock.formatParts[partIterator.nextIndex()].startsWith("%")) {
++            val next = codeBlock.formatParts[partIterator.nextIndex()]
++            // Only the default case below emits a deferred type; the placeholders have cases of their own.
++            if (!next.startsWith("%") && next !in NO_ARG_PLACEHOLDERS) {
+               val candidate = typeName
+               if (candidate.canonicalName in memberImportNames) {
+                 check(deferredTypeName == null) { "pending type for static import?!" }
+diff --git a/kotlinpoet/src/jvmTest/kotlin/com/squareup/kotlinpoet/MemberImportDeferralTest.kt b/kotlinpoet/src/jvmTest/kotlin/com/squareup/kotlinpoet/MemberImportDeferralTest.kt
+new file mode 100644
+index 00000000..73340840
+--- /dev/null
++++ b/kotlinpoet/src/jvmTest/kotlin/com/squareup/kotlinpoet/MemberImportDeferralTest.kt
+@@ -0,0 +1,28 @@
++package com.squareup.kotlinpoet
++
++import com.google.common.truth.Truth.assertThat
++import kotlin.test.Test
++
++class MemberImportDeferralTest {
++  @Test
++  fun typeBeforeIndentIsNotDropped() {
++    val type = CodeBlock.builder().add("%T", System::class).indent().unindent().build()
++    val source =
++      FileSpec.builder("com.squareup.tacos", "Taco")
++        .addImport(System::class, "gc")
++        .addFunction(FunSpec.builder("f").addStatement("val s = %L", type).addStatement("gc()").build())
++        .build()
++    assertThat(source.toString()).contains("val s = System\n")
++  }
++
++  @Test
++  fun typeBeforeIndentKeepsItsPlace() {
++    val block = CodeBlock.builder().add("%T", System::class).indent().add("%S", "x").unindent().add(" + 1").build()
++    val source =
++      FileSpec.builder("com.squareup.tacos", "Taco")
++        .addImport(System::class, "gc")
++        .addFunction(FunSpec.builder("f").addStatement("val s = %L", block).addStatement("gc()").build())
++        .build()
++    assertThat(source.toString()).contains("val s = System\"x\" + 1\n")
++  }
++}
+-- 
+2.43.0
+

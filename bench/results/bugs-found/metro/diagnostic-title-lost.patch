@@ -1,0 +1,97 @@
+From eed42aa8a196b4df1500debe50a87ade48123e2e Mon Sep 17 00:00:00 2001
+From: Krispr bench <bench@krispr.dev>
+Date: Wed, 30 Sep 2026 03:03:30 +0000
+Subject: [PATCH] Keep a diagnostic's title when its location frame cannot be
+ drawn
+
+In rich output the title moves into the first location frame, chosen by
+canRenderLocationFrame. That counted an item's code excerpt even when the item
+prefers a source snippet, which renderFrames then ignores, so when the source
+file could not be read no frame was drawn and the title was never written. The
+unused-multibinding warning reports its contributions this way. Apply
+renderFrames' rule instead: per file, readable source or an excerpt for every
+item.
+---
+ .../diagnostics/render/DiagnosticRenderer.kt  | 16 ++++++--
+ .../DiagnosticRendererTitleTest.kt            | 41 +++++++++++++++++++
+ 2 files changed, 53 insertions(+), 4 deletions(-)
+ create mode 100644 metro-common/src/test/kotlin/dev/zacsweers/metro/compiler/diagnostics/DiagnosticRendererTitleTest.kt
+
+diff --git a/metro-common/src/main/kotlin/dev/zacsweers/metro/compiler/diagnostics/render/DiagnosticRenderer.kt b/metro-common/src/main/kotlin/dev/zacsweers/metro/compiler/diagnostics/render/DiagnosticRenderer.kt
+index 66fcf1d..3640647 100644
+--- a/metro-common/src/main/kotlin/dev/zacsweers/metro/compiler/diagnostics/render/DiagnosticRenderer.kt
++++ b/metro-common/src/main/kotlin/dev/zacsweers/metro/compiler/diagnostics/render/DiagnosticRenderer.kt
+@@ -340,11 +340,19 @@ public class DiagnosticRenderer(
+     }
+   }
+ 
++  /**
++   * Whether [renderLocations] will draw at least one frame, by [renderFrames]' rule: per file, the
++   * source is readable or every item brings an excerpt. An item that prefers a source snippet brings
++   * none. The title goes into that frame, so a section that cannot draw one must not take it.
++   */
+   private fun DiagnosticSection.Locations.canRenderLocationFrame(): Boolean {
+-    return items.any { item ->
+-      val span = item.span ?: return@any false
+-      item.code?.toSourceExcerpt() != null || sourceLines(span.filePath) != null
+-    }
++    return items
++      .filter { it.span != null }
++      .groupBy { it.span!!.filePath }
++      .any { (filePath, group) ->
++        sourceLines(filePath) != null ||
++          group.all { !it.preferSourceSnippet && it.code?.toSourceExcerpt() != null }
++      }
+   }
+ 
+   /** Renders a Kotlin-toolchain-style source frame for [spans] in the same file. */
+diff --git a/metro-common/src/test/kotlin/dev/zacsweers/metro/compiler/diagnostics/DiagnosticRendererTitleTest.kt b/metro-common/src/test/kotlin/dev/zacsweers/metro/compiler/diagnostics/DiagnosticRendererTitleTest.kt
+new file mode 100644
+index 0000000..80387f4
+--- /dev/null
++++ b/metro-common/src/test/kotlin/dev/zacsweers/metro/compiler/diagnostics/DiagnosticRendererTitleTest.kt
+@@ -0,0 +1,41 @@
++// Copyright (C) 2026 Zac Sweers
++// SPDX-License-Identifier: Apache-2.0
++package dev.zacsweers.metro.compiler.diagnostics
++
++import com.google.common.truth.Truth.assertThat
++import dev.zacsweers.metro.compiler.diagnostics.render.DiagnosticRenderer
++import dev.zacsweers.metro.compiler.diagnostics.render.RenderProfile
++import org.junit.Test
++
++class DiagnosticRendererTitleTest {
++  @Test
++  fun `a location that prefers a source snippet keeps the title when the source cannot be read`() {
++    // As SUSPICIOUS_UNUSED_MULTIBINDING reports its contributions, for a source file that is not readable.
++    val renderer = DiagnosticRenderer(RenderProfile.PLAIN.copy(renderSourceSnippets = true), sourceLines = { null })
++    val diagnostic =
++      MetroDiagnostic(
++        id = MetroDiagnosticId.SUSPICIOUS_UNUSED_MULTIBINDING,
++        severity = MetroSeverity.WARNING,
++        title = textOf("Synthetic multibinding Set<Plugin> is unused"),
++        sections =
++          listOf(
++            DiagnosticSection.Locations(
++              header = null,
++              items =
++                listOf(
++                  LocatedItem(
++                    location = "Plugins.kt:3:1",
++                    code = "@IntoSet fun plugin(): Plugin\n              ~~~~~~",
++                    preferSourceSnippet = true,
++                    includeLeadingAnnotations = false,
++                    span = DiagnosticSpan(filePath = "/src/Plugins.kt", line = 3, column = 15, endColumn = 21),
++                  )
++                ),
++            )
++          ),
++        includeDocsUrl = false,
++      )
++
++    assertThat(renderer.render(diagnostic)).contains("Synthetic multibinding Set<Plugin> is unused")
++  }
++}
+-- 
+2.43.0
+

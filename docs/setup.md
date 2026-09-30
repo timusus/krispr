@@ -20,7 +20,8 @@ invocation**. The module can be:
 When several modules apply it, declare it once in the root build with `id("dev.krispr") apply false`,
 as Gradle recommends for any plugin used by more than one module. The modules then share one copy of the
 plugin, and with it the build-wide limit on test JVMs. Without that, Gradle may load a copy per module,
-and the shared limit fails with a build service type mismatch. Builds with isolated projects work.
+and the shared limit fails with a build service type mismatch. Builds with isolated projects work,
+except with `testProject`, which reads the other project directly.
 
 Until the plugin is published, a composite build is the way to get it:
 

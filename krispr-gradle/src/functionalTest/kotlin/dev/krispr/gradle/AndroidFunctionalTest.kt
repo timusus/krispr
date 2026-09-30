@@ -68,6 +68,72 @@ class AndroidFunctionalTest {
     }
 
     /**
+     * A JUnit Platform module whose unit test classes pass through an ASM visitor, as Hilt's do: the test
+     * task's classpath then holds an output of AGP's transform task, which must not be read before that
+     * task runs, so krispr may not look into the classpath's files to decide on a launcher.
+     */
+    @Test
+    fun `a JUnit Platform module with transformed unit test classes runs`(@TempDir dir: File) {
+        val sdk = androidSdk()
+        assumeTrue(sdk != null, "no Android SDK: set ANDROID_HOME")
+        val setup = Setup(Kind.ANDROID_LIBRARY, "9.4.1")
+        writeProject(dir, setup, sdk!!)
+        val script = dir.resolve("build.gradle.kts")
+        script.writeText(
+            """
+            import com.android.build.api.instrumentation.AsmClassVisitorFactory
+            import com.android.build.api.instrumentation.ClassContext
+            import com.android.build.api.instrumentation.ClassData
+            import com.android.build.api.instrumentation.InstrumentationParameters
+            import com.android.build.api.instrumentation.InstrumentationScope
+            import org.objectweb.asm.ClassVisitor
+
+            
+            """.trimIndent() + script.readText().replace(
+                "dependencies { testImplementation(\"junit:junit:4.13.2\") }",
+                "dependencies { testImplementation(\"org.junit.jupiter:junit-jupiter:5.10.2\") }",
+            ) + """
+
+            tasks.withType<Test>().configureEach { useJUnitPlatform() }
+
+            abstract class Untouched : AsmClassVisitorFactory<InstrumentationParameters.None> {
+                override fun createClassVisitor(classContext: ClassContext, nextClassVisitor: ClassVisitor) = nextClassVisitor
+                override fun isInstrumentable(classData: ClassData) = true
+            }
+            androidComponents {
+                onVariants { variant ->
+                    (variant as? com.android.build.api.variant.HasHostTests)?.hostTests?.values?.forEach {
+                        it.instrumentation.transformClassesWith(Untouched::class.java, InstrumentationScope.PROJECT) {}
+                    }
+                }
+            }
+            """.trimIndent(),
+        )
+        dir.resolve("src/test/kotlin/demo/CalcTest.kt").writeText(
+            """
+            package demo
+
+            import org.junit.jupiter.api.Assertions.assertEquals
+            import org.junit.jupiter.api.Test
+
+            class CalcTest {
+                @Test fun adults() {
+                    assertEquals(true, Calc.isAdult(18))
+                    assertEquals(false, Calc.isAdult(17))
+                }
+
+                @Test fun labels() = assertEquals("empty", Calc.label(0))
+            }
+            """.trimIndent(),
+        )
+
+        run(dir, setup, "krisprRun")
+
+        val report = dir.resolve("build/krispr/report.json").readText()
+        assertTrue(count(report, "KILLED") >= 1, report)
+    }
+
+    /**
      * A reused Robolectric sandbox keeps the project's classes, and their companion objects, from mutant
      * to mutant. A surviving mutant of `remember` fills `Price`'s cache, and the mutants of `format` that
      * run after it in the same worker have their result hidden by it, so they survive; in a fresh JVM

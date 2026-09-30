@@ -120,7 +120,13 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
     }
 
     /** The compilation krispr instruments, and the task whose tests it runs. */
-    private class Selected(val target: KotlinTarget, val compilationName: String, val testTask: () -> Test)
+    private class Selected(
+        val target: KotlinTarget,
+        val compilationName: String,
+        val testTask: () -> Test,
+        /** The configuration the test task's external libraries come from, where krispr can tell. */
+        val testRuntimeClasspath: () -> String? = { null },
+    )
 
     private class State(val project: Project, val extension: KrisprExtension, val buildDir: File) {
         var android: AndroidUnitTests? = null
@@ -170,14 +176,24 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
         private fun isAndroid(target: KotlinTarget): Boolean =
             target.platformType == KotlinPlatformType.androidJvm || android?.let { AndroidUnitTests.isAndroidTarget(target) } == true
 
-        private fun jvm(target: KotlinTarget, testTaskName: String) = Selected(target, KotlinCompilation.MAIN_COMPILATION_NAME) {
-            val path = extension.testProject.orNull ?: return@Selected project.tasks.getByName(testTaskName) as Test
+        private fun jvm(target: KotlinTarget, testTaskName: String) = Selected(
+            target,
+            KotlinCompilation.MAIN_COMPILATION_NAME,
+            testTask = { jvmTestTask(testTaskName) },
+            testRuntimeClasspath = {
+                if (extension.testProject.isPresent) null
+                else target.compilations.findByName(KotlinCompilation.TEST_COMPILATION_NAME)?.runtimeDependencyConfigurationName
+            },
+        )
+
+        private fun jvmTestTask(testTaskName: String): Test {
+            val path = extension.testProject.orNull ?: return project.tasks.getByName(testTaskName) as Test
             val other = project.project(path)
             val taskName = other.extensions.findByType(KotlinMultiplatformExtension::class.java)
                 ?.targets?.singleOrNull { it.platformType == KotlinPlatformType.jvm }?.let { "${it.name}Test" }
                 ?: other.extensions.findByType(KotlinJvmProjectExtension::class.java)?.let { "test" }
                 ?: throw GradleException("krispr: testProject $path has no single Kotlin JVM target")
-            other.tasks.getByName(taskName) as Test
+            return other.tasks.getByName(taskName) as Test
         }
 
         /**
@@ -189,11 +205,14 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
             if (extension.testProject.isPresent) throw GradleException("krispr: testProject is not supported for Android targets")
             return if (target is KotlinAndroidTarget) {
                 val variant = extension.androidVariant.get()
-                Selected(target, variant) { android.testTask(project, variant) }
+                Selected(target, variant, { android.testTask(project, variant) }, { "${variant}UnitTestRuntimeClasspath" })
             } else {
-                Selected(target, KotlinCompilation.MAIN_COMPILATION_NAME) {
-                    android.testTask(project, android.onlyVariant() ?: extension.androidVariant.get())
-                }
+                Selected(
+                    target,
+                    KotlinCompilation.MAIN_COMPILATION_NAME,
+                    { android.testTask(project, android.onlyVariant() ?: extension.androidVariant.get()) },
+                    { target.compilations.firstOrNull { it.name.contains("test", ignoreCase = true) }?.runtimeDependencyConfigurationName },
+                )
             }
         }
 
@@ -227,9 +246,18 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
                             dependencies.add(project.dependencies.create("org.junit.vintage:junit-vintage-engine:$VINTAGE_ENGINE_VERSION"))
                         }
                         // Gradle before 9 supplies the launcher to its own test task, so builds often don't declare it.
-                        is JUnitPlatformOptions -> missingLauncherVersion(testTask.get().classpath)?.let {
-                            dependencies.add(project.dependencies.create("org.junit.platform:junit-platform-launcher:$it"))
-                        }
+                        // Only the resolved modules are read: the classpath's files include outputs of tasks
+                        // that have not run yet (AGP's class transforms).
+                        is JUnitPlatformOptions -> selected.testRuntimeClasspath()
+                            ?.let { project.configurations.findByName(it) }
+                            ?.let { configuration ->
+                                missingLauncherVersion(
+                                    configuration.incoming.resolutionResult.allComponents.mapNotNull { component ->
+                                        component.moduleVersion?.let { "${it.group}:${it.name}" to it.version }
+                                    },
+                                )
+                            }
+                            ?.let { dependencies.add(project.dependencies.create("org.junit.platform:junit-platform-launcher:$it")) }
                         else -> throw GradleException("krispr: ${testTask.get().path} uses ${options.javaClass.simpleName}; only JUnit 4 and the JUnit Platform are supported")
                     }
                 }
@@ -402,17 +430,15 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
          * since recording by method would need a post-discovery filter; an exclude naming a method is ignored.
          */
         /**
-         * The JUnit Platform version to add a launcher for: that of the engine on [classpath], or null when
-         * the classpath already has a launcher or no Platform engine at all. Jars are named by their Maven
-         * coordinates in every repository layout Gradle resolves from.
+         * The JUnit Platform version to add a launcher for, given the test runtime's resolved modules as
+         * ("group:name", version): that of the Platform engine, or null when there is a launcher already or
+         * no Platform engine at all.
          */
-        internal fun missingLauncherVersion(classpath: Iterable<java.io.File>): String? {
-            val names = classpath.map { it.name }
-            if (names.any { it.startsWith("junit-platform-launcher-") }) return null
-            return names.firstNotNullOfOrNull { PLATFORM_ENGINE_JAR.matchEntire(it)?.groupValues?.get(1) }
+        internal fun missingLauncherVersion(modules: Iterable<Pair<String, String>>): String? {
+            val versions = modules.toMap()
+            if ("org.junit.platform:junit-platform-launcher" in versions) return null
+            return versions["org.junit.platform:junit-platform-engine"]
         }
-
-        private val PLATFORM_ENGINE_JAR = Regex("""junit-platform-engine-(\d[\w.-]*)\.jar""")
 
         internal fun classIncludes(task: Test): List<String> =
             task.filter.includePatterns.flatMap { listOf(testPatternRegex(it), testPatternRegex(it.substringBeforeLast('.'))) }.distinct() +

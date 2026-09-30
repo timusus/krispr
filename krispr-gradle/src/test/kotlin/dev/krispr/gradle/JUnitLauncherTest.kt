@@ -3,21 +3,24 @@ package dev.krispr.gradle
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
-import java.io.File
 
 class JUnitLauncherTest {
-    private fun missing(vararg jars: String) = KrisprGradlePlugin.missingLauncherVersion(jars.map { File("/cache/$it") })
+    private fun missing(vararg modules: String) =
+        KrisprGradlePlugin.missingLauncherVersion(modules.map { it.substringBeforeLast(':') to it.substringAfterLast(':') })
 
     @Test
     fun aPlatformEngineWithoutALauncherGetsTheEngineVersion() {
-        assertEquals("1.10.2", missing("junit-jupiter-engine-5.10.2.jar", "junit-platform-engine-1.10.2.jar", "junit-platform-commons-1.10.2.jar"))
-        assertEquals("6.0.0-M1", missing("junit-platform-engine-6.0.0-M1.jar"))
+        assertEquals(
+            "1.10.2",
+            missing("org.junit.jupiter:junit-jupiter-engine:5.10.2", "org.junit.platform:junit-platform-engine:1.10.2", "org.junit.platform:junit-platform-commons:1.10.2"),
+        )
+        assertEquals("6.0.0-M1", missing("org.junit.platform:junit-platform-engine:6.0.0-M1"))
     }
 
     @Test
     fun aClasspathWithALauncherOrNoPlatformNeedsNone() {
-        assertNull(missing("junit-platform-engine-1.13.4.jar", "junit-platform-launcher-1.13.4.jar"))
-        assertNull(missing("junit-4.13.2.jar", "hamcrest-core-1.3.jar"))
+        assertNull(missing("org.junit.platform:junit-platform-engine:1.13.4", "org.junit.platform:junit-platform-launcher:1.13.4"))
+        assertNull(missing("junit:junit:4.13.2", "org.hamcrest:hamcrest-core:1.3"))
         assertNull(missing())
     }
 }

@@ -1,0 +1,69 @@
+From 728e8b3b47970eb2f9d997dd2ac4c6c77ae6b17f Mon Sep 17 00:00:00 2001
+From: Krispr bench <bench@krispr.dev>
+Date: Wed, 30 Sep 2026 05:14:27 +0000
+Subject: [PATCH] Take the latest date on a scanned card as its expiry
+
+---
+ .../feature/cardscanner/util/CardDataParserImpl.kt | 13 ++++++++-----
+ .../cardscanner/util/CardDataParserImplTest.kt     | 14 ++++++++++++++
+ 2 files changed, 22 insertions(+), 5 deletions(-)
+
+diff --git a/ui/src/main/kotlin/com/bitwarden/ui/platform/feature/cardscanner/util/CardDataParserImpl.kt b/ui/src/main/kotlin/com/bitwarden/ui/platform/feature/cardscanner/util/CardDataParserImpl.kt
+index 95ed7bf..a0fcefb 100644
+--- a/ui/src/main/kotlin/com/bitwarden/ui/platform/feature/cardscanner/util/CardDataParserImpl.kt
++++ b/ui/src/main/kotlin/com/bitwarden/ui/platform/feature/cardscanner/util/CardDataParserImpl.kt
+@@ -20,14 +20,14 @@ class CardDataParserImpl : CardDataParser {
+             ?.filter { it.isDigit() }
+             ?.takeIf { it.isValidLuhn() }
+ 
+-        val expiryMatch = EXPIRY_REGEX.find(text)
++        // A card may also print a "valid from" date; the expiry is the latest date.
++        val expiryMatch = EXPIRY_REGEX
++            .findAll(text)
++            .maxByOrNull { it.expirationYear().toInt() * 100 + it.groupValues[1].toInt() }
+         val expirationMonth = expiryMatch
+             ?.groupValues
+             ?.getOrNull(1)
+-        val expirationYear = expiryMatch
+-            ?.groupValues
+-            ?.getOrNull(2)
+-            ?.let { if (it.length == 2) "20$it" else it }
++        val expirationYear = expiryMatch?.expirationYear()
+ 
+         // Use brand-aware CVV length: Amex uses 4 digits, all others use 3.
+         val isAmex = number?.let { it.startsWith("34") || it.startsWith("37") } == true
+@@ -64,3 +64,6 @@ class CardDataParserImpl : CardDataParser {
+             }
+     }
+ }
++
++private fun MatchResult.expirationYear(): String =
++    groupValues[2].let { if (it.length == 2) "20$it" else it }
+diff --git a/ui/src/test/kotlin/com/bitwarden/ui/platform/feature/cardscanner/util/CardDataParserImplTest.kt b/ui/src/test/kotlin/com/bitwarden/ui/platform/feature/cardscanner/util/CardDataParserImplTest.kt
+index cf70984..84fcf60 100644
+--- a/ui/src/test/kotlin/com/bitwarden/ui/platform/feature/cardscanner/util/CardDataParserImplTest.kt
++++ b/ui/src/test/kotlin/com/bitwarden/ui/platform/feature/cardscanner/util/CardDataParserImplTest.kt
+@@ -22,6 +22,20 @@ class CardDataParserImplTest {
+         )
+     }
+ 
++    @Test
++    fun `parseCardData takes the expiry and not the valid from date`() {
++        val text = "4111 1111 1111 1111\nVALID FROM 09/21 EXPIRES END 09/26"
++        assertEquals(
++            ParsedCardFields(
++                number = "4111111111111111",
++                expirationMonth = "09",
++                expirationYear = "2026",
++                securityCode = null,
++            ),
++            parser.parseCardData(text),
++        )
++    }
++
+     @Test
+     fun `parseCardData rejects invalid card number failing Luhn`() {
+         val text = "4111 1111 1111 1112 12/25"
+-- 
+2.43.0
+

@@ -1,0 +1,74 @@
+From ee2e2eb6585011bc644d7a2b5c44d6040133552f Mon Sep 17 00:00:00 2001
+From: Krispr bench <bench@krispr.dev>
+Date: Wed, 30 Sep 2026 05:09:27 +0000
+Subject: [PATCH] Expand bare sidewalk:bicycle tags when applying a cycleway
+ answer
+
+---
+ .../osm/cycleway/CyclewayCreator.kt           |  6 ++---
+ .../osm/cycleway/CyclewayCreatorKtTest.kt     | 25 +++++++++++++++++++
+ 2 files changed, 28 insertions(+), 3 deletions(-)
+
+diff --git a/app/src/commonMain/kotlin/de/westnordost/streetcomplete/osm/cycleway/CyclewayCreator.kt b/app/src/commonMain/kotlin/de/westnordost/streetcomplete/osm/cycleway/CyclewayCreator.kt
+index 82b68af..7772d6c 100644
+--- a/app/src/commonMain/kotlin/de/westnordost/streetcomplete/osm/cycleway/CyclewayCreator.kt
++++ b/app/src/commonMain/kotlin/de/westnordost/streetcomplete/osm/cycleway/CyclewayCreator.kt
+@@ -30,9 +30,9 @@ fun Sides<CyclewayAndDirection>.applyTo(tags: Tags, isLeftHandTraffic: Boolean)
+     tags.expandSides("cycleway", "lane", false)
+     tags.expandSides("cycleway", "oneway", false)
+     tags.expandSides("cycleway", "segregated", false)
+-    tags.expandSides("sidewalk", "bicycle", false)
+-    tags.expandSides("sidewalk", "bicycle:signed", false)
+-    tags.expandSides("sidewalk", "oneway:bicycle", false)
++    tags.expandSides("sidewalk", "bicycle")
++    tags.expandSides("sidewalk", "bicycle:signed")
++    tags.expandSides("sidewalk", "oneway:bicycle")
+ 
+     applyOnewayNotForCyclists(tags)
+     left?.applyTo(tags, false, isLeftHandTraffic)
+diff --git a/app/src/commonTest/kotlin/de/westnordost/streetcomplete/osm/cycleway/CyclewayCreatorKtTest.kt b/app/src/commonTest/kotlin/de/westnordost/streetcomplete/osm/cycleway/CyclewayCreatorKtTest.kt
+index 42961a1..147d3e8 100644
+--- a/app/src/commonTest/kotlin/de/westnordost/streetcomplete/osm/cycleway/CyclewayCreatorKtTest.kt
++++ b/app/src/commonTest/kotlin/de/westnordost/streetcomplete/osm/cycleway/CyclewayCreatorKtTest.kt
+@@ -200,6 +200,22 @@ class CyclewayCreatorKtTest {
+         )
+     }
+ 
++    @Test fun `apply none where bicycles are allowed on both sidewalks with bare tags`() {
++        val tags = mapOf(
++            "highway" to "residential",
++            "cycleway" to "no",
++            "sidewalk" to "both",
++            "sidewalk:bicycle" to "yes",
++            "sidewalk:bicycle:signed" to "yes",
++        )
++        assertEquals(SIDEWALK_OK, parseCyclewaySides(tags, false)?.right?.cycleway)
++
++        val result = cycleway(NONE, NONE).appliedAndParsed(tags)
++
++        assertEquals(NONE, result?.left?.cycleway)
++        assertEquals(NONE, result?.right?.cycleway)
++    }
++
+     @Test fun `apply none to a side where sidewalk bicycle designated it set`() {
+         assertEquals(
+             setOf(
+@@ -885,6 +901,15 @@ class CyclewayCreatorKtTest {
+     }
+ }
+ 
++private fun Sides<CyclewayAndDirection>.appliedAndParsed(
++    tags: Map<String, String>,
++    isLeftHandTraffic: Boolean = false
++): Sides<CyclewayAndDirection>? {
++    val cb = StringMapChangesBuilder(tags)
++    applyTo(cb, isLeftHandTraffic)
++    return parseCyclewaySides(cb.toMap(), isLeftHandTraffic)
++}
++
+ private fun Sides<CyclewayAndDirection>.appliedTo(
+     tags: Map<String, String>,
+     isLeftHandTraffic: Boolean = false
+-- 
+2.43.0
+

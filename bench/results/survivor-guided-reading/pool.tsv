@@ -1,0 +1,28 @@
+id	module	claim
+B1	bw-core	isOverFiveMinutesOld truncates to whole minutes: an instant 5:30 old is not "over five minutes old"
+B2	bw-core	InstantSerializer rejects timestamps with 8 or 9 fraction digits
+B3	bw-core	toFormatted*Style formats month and day names in the default locale, not the given one
+B4	bw-core	SpecialCharWithPrecedenceComparator is not transitive for I, İ and J
+M1	tb-mail	MessageIdParser rejects a one-character dot-atom part followed by a dot
+M2	tb-mail	MimeParameterDecoder throws on bad percent-encoding in a later RFC 2231 section
+M3	tb-mail	Int.encodeUtf8 writes U+10000 as three invalid bytes
+M4	tb-mail	Address.pack escapes quotes in the personal name and unpack never unescapes them
+M5	tb-mail	PeekableInputStream: read(buffer) after peek() at end of stream returns 1, skip(n) after peek() returns n-1
+T1	tb-core	PriorityQueue iterator remove skips an element that sifts up, so removeAll leaves it
+T2	tb-core	PriorityQueue iterator remove twice removes another element instead of failing
+T3	tb-core	StateDiffer reports no change for a list that changes but keeps its size
+T4	tb-core	StateDiffer pairs map entries by position, not key
+T5	tb-core	StateDiffer throws on a list holding null that changes size
+T6	tb-core	StateMachine calls the initial state's onEnter after 500 ms with whatever state is current
+T7	tb-core	HostNameUtils accepts an IPv6 address with 8 groups and ::
+T8	tb-core	Queue.element() throws IllegalStateException, not the documented NoSuchElementException
+S1	sc	estimateBuildingHeight / estimateMinBuildingHeight throw on a height with a unit
+S2	sc	updateWithCheckDate adds check_date:key when only an element-wide check_date existed and the value changed
+S3	sc	ElementFilterExpression: !(...) makes untagged elements never match
+S4	sc	Feature.isChildOf is a plain string prefix: shop/car_parts is a child of shop/car
+S5	sc	isInPolygon counts a ray through a top/bottom vertex or flat edge wrongly
+S6	sc	WaysCrossingUtils misses a crossing at the closing node of a closed way
+S7	sc	List<LatLon>.intersectsWith ignores a crossing when the segment also touches the other line's end
+S8	sc	StreetParkingCreator leaves markings=yes when changing painted-area-only to staggered on street
+S9	sc	BoundingBox.isCompletelyInside is wrong for a box crossing the 180th meridian
+S10	sc	ElementFiltersParser rejects "today" followed by and/or

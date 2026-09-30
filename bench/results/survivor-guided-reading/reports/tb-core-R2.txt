@@ -1,0 +1,6 @@
+MODULE tb-core
+C1 core/common/.../collections/PriorityQueue.kt:113-141 iterator remove skips an element sifted up; minPriorityQueueOf(1,10,2,11,12,3).removeAll(11,3) leaves 3. Test: PriorityQueueTests contains(3) false, size 4. High.
+C2 PriorityQueue.kt:137-141 iterator remove twice deletes another element instead of IllegalStateException. Test: second remove fails; size 3. Medium-low.
+C3 core/common/.../state/debug/StateDiffer.kt:163-192 same-size list change reported as unchanged. Test: CommonStatePrettyPrinterTest contains "b -> c". Medium (debug output).
+C4 StateDiffer.kt:133-141 map diff pairs entries by position not key. Test: contains "[theme]: light -> null". Medium (debug output).
+C5 StateDiffer.kt:215,222 requireNotNull crash on null list elements with size change. Test: WithNullable(listOf(null)) -> emptyList completes. Low-medium.

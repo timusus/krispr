@@ -1,0 +1,6 @@
+MODULE tb-mail
+C1 mail/common/.../internet/MessageIdParser.kt:75-87 readDotAtom rejects "<a.b.c@domain.example>" (Expected '@'). Test: MessageIdParserTest parse("<a.b.c@domain.example>") == same. High.
+C2 mail/common/.../internet/MimeParameterDecoder.kt:192-196 continuation section with bad percent throws: decode("attachment; filename*0*=UTF-8''file; filename*1*=%"). Test: no exception. High.
+C3 mail/common/.../helper/Utf8.kt:100 0xe000..0x10000 includes U+10000, writes F0 80 80. Test: MimeParameterEncoder.encode("attachment", filename "𐀀"x10) contains "%F0%90%80%80". Medium.
+C4 mail/common/.../mail/Address.kt:234,201-207 pack escapes quotes, unpack doesn't unescape: personal Joe "JJ" Smith round-trips as Joe \"JJ\" Smith. Test: AddressTest unpack(pack(a))[0].personal == original. Medium.
+C5 mail/common/.../filter/PeekableInputStream.kt:23-37 peek() at EOF then read(ByteArray(4)) returns 1 with 0xFF instead of -1. Test: PeekableInputStreamTest. Low.

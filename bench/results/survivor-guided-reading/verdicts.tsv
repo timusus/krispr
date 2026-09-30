@@ -1,0 +1,28 @@
+id	verdict	kind	evidence
+B1	confirmed	user-facing	330 s old returns false; KDoc says "five or more minutes old"; caller docs say expired at 5 minutes
+B2	rejected	-	fails as claimed, but the pattern enumerates 1-7 fraction digits to match the server, which sends at most 7: not a realistic input
+B3	confirmed	user-facing	"décembre 10, 2023" for Locale.US on a French default
+B4	confirmed	user-facing	compare(I,İ)=0, compare(I,J)<0, compare(İ,J)>0
+M1	confirmed	user-facing	"<a.b.c@domain.example>" throws Expected '@'
+M2	confirmed	user-facing	later section with %ZZ throws MimeHeaderParserException out of decode
+M3	confirmed	user-facing	long name with U+10000 does not survive encode/decode
+M4	rejected	-	pack/unpack round-trips the quoted name on main; the test passes
+M5	confirmed	latent	read(ByteArray) after peek() at end of stream returns 1, not -1; no caller shown to reach it
+T1	confirmed	latent	removeAll(11, 3) leaves 3; the only caller removes one element at a time
+T2	confirmed	latent	a second remove() without next() removes another element instead of failing
+T3	confirmed	debug	same-size list change missing from the debug diff
+T4	confirmed	debug	map diff labels by position: "[theme]: light -> null" missing
+T5	confirmed	debug	IllegalArgumentException "Required value was null" for a nullable list; no current state has one
+T6	confirmed	latent	process() within 500 ms: Init's onEnter gets Loading, ClassCastException
+T7	confirmed	user-facing	"1:2:3:4::5:6:7:8" accepted as 0001:...:0008; server settings accept a malformed address
+T8	confirmed	latent	element() on empty queue throws IllegalStateException; KDoc says NoSuchElementException; no caller
+S1	confirmed	user-facing	"10 m" throws NumberFormatException from estimateBuildingHeight, called by the buildings overlay
+S2	rejected	-	fails as claimed, but the condition explicitly includes hasCheckDate() and the comment allows that reading: deliberate
+S3	confirmed	latent	"nodes with !(shop or craft)" does not match an untagged node; no current filter is affected
+S4	confirmed	user-facing	shop/car_parts isChildOf shop/car is true; used when replacing places
+S5	confirmed	user-facing	point level with a square's top edge, and one level with a rhombus's bottom corner, reported inside
+S6	confirmed	user-facing	road crossing a closed wall at its closing node: no barrier quest
+S7	confirmed	user-facing	a real crossing is ignored when the segment also touches the other line's end
+S8	confirmed	user-facing	painted-area-only changed to staggered-on-street reads back as painted-area-only
+S9	confirmed	user-facing	box crossing the 180th meridian reported completely inside a box covering one side
+S10	confirmed	latent	"check_date < today and foo" throws ParseException; no current quest filter has that shape

@@ -1,0 +1,20 @@
+You are reviewing code to find real bugs in {PROJECT}. The source is a clean export of commit {COMMIT} at {ROOT}.
+
+Scope: {SCOPE}
+You may read anything under {ROOT}, including the project's tests, docs and callers of the code in scope, to understand intended behaviour.
+{SURVIVORS}
+Rules:
+- Read only files under {ROOT}{SURVIVOR_PATH_RULE}. Don't read anything else on this machine, don't search the web, don't run builds or tests, and don't edit any file.
+- Spend about 50 tool calls, then report.
+- Report at most 6 candidates, ranked by confidence. Only report cases where the CURRENT code gives a wrong result for a realistic input: a crash, a wrong value, wrong data written, a valid input rejected or an invalid one accepted. Not style, performance, missing tests, or behaviour the code, its comments or its tests show is deliberate. Zero candidates is a fine answer.
+- For each candidate give:
+  1. file and line;
+  2. the current code, quoted;
+  3. a concrete input;
+  4. what the code does now with it;
+  5. what it should do, and why (cite the spec, the project's docs or tests, or the code's evident purpose);
+  6. how a user of the product would notice;
+  7. your confidence (high, medium or low);
+  8. a unit test that would fail today: the test class to put it in, the call, and the assertion.
+
+Report in plain text, one numbered section per candidate.

@@ -1,0 +1,4 @@
+MODULE bw-core
+C1 core/.../data/util/TemporalAccessorExtensions.kt:17 toFormattedPattern uses DateTimeFormatter.ofPattern(pattern) without locale; toFormattedDateStyle(LONG, Locale.US) on a French default gives "décembre 10, 2023". Test: TemporalAccessorExtensionsTest with Locale.setDefault(FRANCE), expect "December 10, 2023". Confidence high.
+C2 core/.../util/InstantExtensions.kt:13-16 isOverFiveMinutesOld toMinutes() > 5 returns false at 5:45. Test: assertTrue(fixedClock.instant().minusSeconds(345).isOverFiveMinutesOld(fixedClock)). Confidence medium.
+C3 core/.../data/repository/util/SpecialCharWithPrecedenceComparator.kt:36-45 not transitive for "I","İ","J": compare(I,İ)=0, compare(I,J)<0, compare(İ,J)>0. Test: assert a != 0 || sign(b)==sign(c). Confidence low.

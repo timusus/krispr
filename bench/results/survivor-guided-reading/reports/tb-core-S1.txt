@@ -1,0 +1,6 @@
+MODULE tb-core
+C1 PriorityQueue.kt:113-141 iterator remove skips element; removeAll{11||3} leaves 3; double remove. High.
+C2 StateDiffer.kt:163-192 same-size list change not reported. High (debug).
+C3 StateDiffer.kt:133-141 map diff by position. High (debug).
+C4 StateDiffer.kt:215,222 null element crash. Medium.
+C5 collections/Queue.kt:65-72 element() throws IllegalStateException, KDoc says NoSuchElementException. Low.

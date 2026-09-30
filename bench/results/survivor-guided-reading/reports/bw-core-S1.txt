@@ -1,0 +1,3 @@
+MODULE bw-core
+C1 TemporalAccessorExtensions.kt:14 locale ignored for month names; "décembre 10, 2023". High. (a survivor pointed near it: NAMED_DEFAULT_DROP :34)
+C2 InstantExtensions.kt:12-15 isOverFiveMinutesOld truncation; 330s false. Medium.

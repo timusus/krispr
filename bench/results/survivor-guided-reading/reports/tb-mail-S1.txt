@@ -1,0 +1,5 @@
+MODULE tb-mail
+C1 MessageIdParser.kt:78-84 readDotAtom rejects "<a.b.c@example.com>". High.
+C2 Utf8.kt:100 U+10000 as F0 80 80. High (rare).
+C3 Address.kt:234 pack escapes quotes, unpack doesn't. Medium.
+C4 PeekableInputStream.kt:42-51 read(buffer) after peek at EOF returns 1. Low.

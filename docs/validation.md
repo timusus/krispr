@@ -298,8 +298,8 @@ UNKNOWN.
 | kotlinpoet | 1053 | 971 | 0 | 226 s |
 
 0 of 1432 kills disagreed, below the 0.5% bar for a default-on guard, so `confirmKills` stays opt-in.
-The mutant counts are 3 and 2 lower than in the tables above, which predate skipping arid code by
-default. The caches, delays, metrics and `@Generated` categories and the literal-equivalence filter
+The mutant counts are 3 and 2 lower than in the tables above, which predate skipping code that isn't
+worth mutating by default. The caches, delays, metrics and `@Generated` categories and the literal-equivalence filter
 remove none on kotlinpoet: with the four categories switched back on it still has 1053 mutants, and
 its sources have no `x + 0` or `x * 1` style literal. Everything else is as before: clikt 471 killed,
 43 survived, 43 no coverage; kotlinpoet 982, 45, 26.

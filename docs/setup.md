@@ -17,6 +17,11 @@ invocation**. The module can be:
   `testAndroidHostTest`; from `com.android.library` with `androidTarget()` (AGP 8), a variant as above. Common code is covered only through that one JVM-hosted target. Native, JS
   and Wasm tests are out of scope.
 
+When several modules apply it, declare it once in the root build with `id("dev.krispr") apply false`,
+as Gradle recommends for any plugin used by more than one module. The modules then share one copy of the
+plugin, and with it the build-wide limit on test JVMs. Without that, Gradle may load a copy per module,
+and the shared limit fails with a build service type mismatch. Builds with isolated projects work.
+
 Until the plugin is published, a composite build is the way to get it:
 
 ```kotlin

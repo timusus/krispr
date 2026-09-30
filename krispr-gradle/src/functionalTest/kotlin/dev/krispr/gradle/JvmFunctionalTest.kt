@@ -941,6 +941,44 @@ class JvmFunctionalTest {
     }
 
     @Test
+    fun `runs in a build with isolated projects`(@TempDir dir: File) {
+        writeProject(dir)
+        dir.resolve("build.gradle.kts").writeText(
+            """
+            plugins {
+                kotlin("jvm") version "$KOTLIN" apply false
+                id("dev.krispr") apply false
+            }
+            """.trimIndent(),
+        )
+        dir.resolve("settings.gradle.kts").appendText("\ninclude(\":a\", \":b\")\n")
+        dir.resolve("gradle.properties").appendText("\norg.gradle.unsafe.isolated-projects=true\n")
+        for (module in listOf("a", "b")) {
+            dir.resolve("$module/build.gradle.kts").apply { parentFile.mkdirs() }.writeText(
+                """
+                plugins {
+                    kotlin("jvm")
+                    id("dev.krispr")
+                }
+                kotlin { jvmToolchain(21) }
+                dependencies { testImplementation(kotlin("test")) }
+                tasks.test { useJUnitPlatform() }
+                """.trimIndent(),
+            )
+            dir.resolve("$module/src/main/kotlin/Calc.kt").apply { parentFile.mkdirs() }.writeText("fun add(a: Int, b: Int) = a + b")
+            dir.resolve("$module/src/test/kotlin/CalcTest.kt").apply { parentFile.mkdirs() }
+                .writeText("class CalcTest { @kotlin.test.Test fun adds() = kotlin.test.assertEquals(5, add(2, 3)) }")
+        }
+
+        run(dir, "krisprRun")
+
+        for (module in listOf("a", "b")) {
+            val report = dir.resolve("$module/build/krispr/report.json").readText()
+            assertTrue(count(report, "KILLED") >= 1, report)
+        }
+    }
+
+    @Test
     fun `modules run in parallel never run more JVMs at once than maxConcurrentJvms`(@TempDir dir: File) {
         // Every test JVM holds a marker file while its test runs, and notes how many markers it saw.
         val markers = dir.resolve("markers")

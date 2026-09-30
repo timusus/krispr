@@ -49,5 +49,3 @@
   directly counts, so a test that captures through its own helper (nowinandroid's `captureMultiTheme`)
   is a killer like any other; add it to `excludeTests`. `useScreenshotTests = true` turns detection
   off. The recording run still runs every test.
-- Configuration cache and isolated projects worked on nowinandroid, which enables both, but no test
-  covers them.

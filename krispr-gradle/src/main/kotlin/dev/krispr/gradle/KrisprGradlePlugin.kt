@@ -282,6 +282,9 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
                 task.excludeClasses.set(testTask.map(::classExcludes))
             }
 
+            val recordTasks = project.gradle.sharedServices.registerIfAbsent(RecordTasks.NAME, RecordTasks::class.java) {}
+            recordTasks.get().paths += taskPath(project.path, "krisprRecord")
+
             val reportJson = krisprDir.file("report.json")
             val report = project.tasks.register("krisprReport", KrisprReportTask::class.java) { task ->
                 task.group = "verification"
@@ -301,7 +304,7 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
                 // for a JVM slot holds a Gradle worker, and Gradle has no public way to hand it back while it
                 // waits (a Worker API work item holds one too), so without this, krisprRun tasks queued for
                 // slots could fill every Gradle worker while other modules still had to compile and record.
-                task.mustRunAfter(project.rootProject.allprojects.map { it.tasks.withType(KrisprRecordTask::class.java) })
+                task.mustRunAfter(Callable { recordTasks.get().paths.toList() })
                 task.inheritTestTask()
                 task.manifest.set(krisprDir.file(MANIFEST_NAME))
                 task.instrumented.set(instrumenting)

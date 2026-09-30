@@ -74,7 +74,22 @@ abstract class KrisprRecordTask : KrisprForkTask() {
         }
         when (result.exitCode) {
             0 -> logger.lifecycle("krispr: recorded coverage in ${result.millis} ms")
-            1 -> throw GradleException("krispr: tests fail against the instrumented classes with no mutant active; see ${result.log}")
+            // The runner prints its timing line only after the tests ran; without it the JVM died first.
+            1 -> if (result.timing == null) {
+                throw GradleException(
+                    "krispr: the recording JVM stopped before running the tests" +
+                        (firstError(result.log)?.let { ": $it" } ?: "") + "; see ${result.log}",
+                )
+            } else {
+                // The run's baseline finds these again and bars them from killing mutants.
+                val names = result.failures.map { it.second }.distinct().sorted()
+                logger.warn(
+                    "krispr: ${names.size} tests fail with no mutant active and may not kill mutants: " +
+                        names.take(5).joinToString(", ") + (if (names.size > 5) " +${names.size - 5} more" else "") +
+                        "; see ${result.log}",
+                )
+                logger.lifecycle("krispr: recorded coverage in ${result.millis} ms")
+            }
             // No tests: every mutant is NO_COVERAGE, and a module without mutants still gets its empty report.
             2 -> logger.lifecycle("krispr: the recording run found no tests; see ${result.log}").also { coverageFile.createNewFile() }
             else -> throw GradleException("krispr: the recording run failed (exit ${result.exitCode}); see ${result.log}")
@@ -82,6 +97,12 @@ abstract class KrisprRecordTask : KrisprForkTask() {
     }
 
     internal companion object {
+        /** The first exception line of a log, such as the missing class that stopped a JVM. */
+        fun firstError(log: java.io.File): String? =
+            log.takeIf { it.isFile }?.useLines { lines -> lines.map { it.trim() }.firstOrNull { ERROR_LINE.containsMatchIn(it) } }
+
+        private val ERROR_LINE = Regex("""^(Exception in thread|Caused by:|[\w.$]+(Exception|Error)\b)""")
+
         /** Each test's class, method and duration, next to the coverage file; see the runtime's RecordingListener. */
         fun testsFile(coverage: java.io.File) = coverage.resolveSibling("tests.tsv")
     }

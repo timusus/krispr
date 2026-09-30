@@ -140,6 +140,28 @@ class JvmFunctionalTest {
     }
 
     @Test
+    fun `a test that fails with no mutant active is barred from killing and the run goes on`(@TempDir dir: File) {
+        writeProject(
+            dir,
+            main = mapOf(
+                "Broken.kt" to "fun broken(a: Int) = a + 1",
+                "Calc.kt" to "fun add(a: Int, b: Int) = a + b",
+            ),
+            test = mapOf(
+                "BrokenTest.kt" to "class BrokenTest { @kotlin.test.Test fun fails() = kotlin.test.assertEquals(0, broken(1)) }",
+                "CalcTest.kt" to "class CalcTest { @kotlin.test.Test fun adds() = kotlin.test.assertEquals(5, add(2, 3)) }",
+            ),
+        )
+
+        val result = run(dir, "krisprRun")
+
+        assertTrue("1 tests fail with no mutant active and may not kill mutants: fails()" in result.output, result.output)
+        val report = report(dir)
+        assertTrue("its tests fail without the mutant" in report, report)
+        assertTrue(count(report, "KILLED") >= 1, report)
+    }
+
+    @Test
     fun `slow tests kill only when included, within the budget`(@TempDir dir: File) {
         val main = mapOf("Calc.kt" to "fun add(a: Int, b: Int) = a + b\nfun sub(a: Int, b: Int) = a - b")
         val test = mapOf(

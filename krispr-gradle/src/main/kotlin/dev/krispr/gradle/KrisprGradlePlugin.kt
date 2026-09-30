@@ -213,10 +213,11 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
 
             // The forks always run on the JUnit Platform. A JUnit 4 test task has neither the launcher nor an
             // engine on its classpath, so bring the Vintage engine and let it run the project's own junit jar.
+            // A JUnit Platform task may lack only the launcher.
             val platform = project.configurations.create("krisprJUnitPlatform") { configuration ->
                 configuration.isCanBeConsumed = false
                 configuration.isCanBeResolved = true
-                configuration.description = "JUnit Platform launcher and Vintage engine for krispr runs of JUnit 4 tests."
+                configuration.description = "JUnit Platform launcher, and Vintage engine for JUnit 4 tests, for krispr runs."
                 configuration.exclude(mapOf("group" to "junit", "module" to "junit"))
                 configuration.exclude(mapOf("group" to "org.hamcrest"))
                 configuration.withDependencies { dependencies ->
@@ -225,7 +226,10 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
                             dependencies.add(project.dependencies.create("org.junit.platform:junit-platform-launcher:$VINTAGE_PLATFORM_VERSION"))
                             dependencies.add(project.dependencies.create("org.junit.vintage:junit-vintage-engine:$VINTAGE_ENGINE_VERSION"))
                         }
-                        is JUnitPlatformOptions -> Unit
+                        // Gradle before 9 supplies the launcher to its own test task, so builds often don't declare it.
+                        is JUnitPlatformOptions -> missingLauncherVersion(testTask.get().classpath)?.let {
+                            dependencies.add(project.dependencies.create("org.junit.platform:junit-platform-launcher:$it"))
+                        }
                         else -> throw GradleException("krispr: ${testTask.get().path} uses ${options.javaClass.simpleName}; only JUnit 4 and the JUnit Platform are supported")
                     }
                 }
@@ -394,6 +398,19 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
          * `pkg/Class.class`), as class-name regexes. An include naming a method selects its whole class,
          * since recording by method would need a post-discovery filter; an exclude naming a method is ignored.
          */
+        /**
+         * The JUnit Platform version to add a launcher for: that of the engine on [classpath], or null when
+         * the classpath already has a launcher or no Platform engine at all. Jars are named by their Maven
+         * coordinates in every repository layout Gradle resolves from.
+         */
+        internal fun missingLauncherVersion(classpath: Iterable<java.io.File>): String? {
+            val names = classpath.map { it.name }
+            if (names.any { it.startsWith("junit-platform-launcher-") }) return null
+            return names.firstNotNullOfOrNull { PLATFORM_ENGINE_JAR.matchEntire(it)?.groupValues?.get(1) }
+        }
+
+        private val PLATFORM_ENGINE_JAR = Regex("""junit-platform-engine-(\d[\w.-]*)\.jar""")
+
         internal fun classIncludes(task: Test): List<String> =
             task.filter.includePatterns.flatMap { listOf(testPatternRegex(it), testPatternRegex(it.substringBeforeLast('.'))) }.distinct() +
                 task.includes.map(::filePatternRegex)

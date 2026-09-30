@@ -47,7 +47,8 @@ krispr {
 
 The project must be on Kotlin 2.1.20 up to 2.4.x (see [Kotlin versions](#kotlin-versions)). The test task can
 use JUnit 4 (`useJUnit()`, `kotlin-test-junit`) or the JUnit Platform (Jupiter, Kotest, Vintage).
-For JUnit 4, Krispr brings its own Platform launcher and Vintage engine.
+For JUnit 4, Krispr brings its own Platform launcher and Vintage engine. A JUnit Platform task that doesn't
+declare the launcher, which Gradle before 9 supplies itself, gets the launcher matching its engine.
 
 ## Kotlin Multiplatform
 

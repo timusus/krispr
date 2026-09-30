@@ -162,6 +162,29 @@ class JvmFunctionalTest {
     }
 
     @Test
+    fun `a JUnit Platform test task that does not declare the launcher gets the one matching its engine`(@TempDir dir: File) {
+        // Gradle before 9 supplies the launcher to its own test task, so such builds never declare it.
+        writeProject(
+            dir,
+            main = mapOf("Calc.kt" to "fun add(a: Int, b: Int) = a + b"),
+            test = mapOf(
+                "CalcTest.kt" to """
+                    class CalcTest {
+                        @org.junit.jupiter.api.Test fun adds() = org.junit.jupiter.api.Assertions.assertEquals(5, add(2, 3))
+                    }
+                """.trimIndent(),
+            ),
+            testDependencies = "testImplementation(\"org.junit.jupiter:junit-jupiter:5.10.2\")",
+        )
+
+        run(dir, "krisprRun")
+
+        val report = report(dir)
+        assertTrue(count(report, "KILLED") >= 1, report)
+        assertEquals(0, count(report, "SURVIVED"), report)
+    }
+
+    @Test
     fun `slow tests kill only when included, within the budget`(@TempDir dir: File) {
         val main = mapOf("Calc.kt" to "fun add(a: Int, b: Int) = a + b\nfun sub(a: Int, b: Int) = a - b")
         val test = mapOf(
@@ -1082,6 +1105,7 @@ class JvmFunctionalTest {
         krispr: String = "",
         forceCompilerVersion: String? = null,
         buildScript: String = "",
+        testDependencies: String = "testImplementation(kotlin(\"test\"))",
     ) {
         val repo = System.getProperty("krispr.repo").replace("\\", "/")
         val version = System.getProperty("krispr.version")
@@ -1126,7 +1150,7 @@ class JvmFunctionalTest {
                 id("dev.krispr")
             }
             kotlin { jvmToolchain(21) }
-            dependencies { testImplementation(kotlin("test")) }
+            dependencies { $testDependencies }
             tasks.test { useJUnitPlatform() }
             $forceCompiler
             krispr {

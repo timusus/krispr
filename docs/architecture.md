@@ -31,7 +31,7 @@
   - `RETURN_VALUE`: a Boolean return is negated; an Int return becomes 0, or 1 when it was already 0
   - `INCREMENTS`: `++↔--`, prefix and postfix
   - `INVERT_NEGS`: `-x → x`
-  - `REMOVE_CALL`: a call statement that returns Unit is removed (`validate(x)`), unless it is arid
+  - `REMOVE_CALL`: a call statement that returns Unit is removed (`validate(x)`), unless it is skipped code
     (logging, metrics, delays, …)
   - `NULL_RETURNS`: a nullable return value becomes `null`
   - `SKIP_IS_BRANCH`: an `is`/`!is` condition of a `when` becomes `false`, so the branch is never taken
@@ -239,7 +239,7 @@
   the code as written, before Compose adds `$composer`, `$changed`, groups and default masks. Without
   Compose the flag is a no-op. If Compose ran first, its code has no source offsets or operator
   origins and would still get no mutants. `AndroidGeneratedCodeTest` checks both orders. Composable
-  code itself is [arid](tuning.md#arid-code) by default, so this matters with `mutate = listOf("composables")`.
+  code itself is [skipped](tuning.md#code-that-isnt-worth-mutating) by default, so this matters with `mutate = listOf("composables")`.
 - **Robolectric** loads app and runtime classes again in its sandbox classloader. The sandboxed
   `Recorder` copy forwards every hit to the system classloader's copy, which knows the current
   test, and the sandboxed `Mutants` copy registers with the system copy to follow its active mutant.

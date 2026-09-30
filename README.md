@@ -15,20 +15,28 @@ Krispr is a prototype, version 0.1.
 
 ## Does it work?
 
-[docs/evidence.md](docs/evidence.md) compares Krispr with PIT 1.30 on kotlin-result, clikt and turbine,
-with the same tests on the same machine. Two raters (Claude subagents, not developers; see the page's
-caveats), blind to which tool produced each survivor, rated 147 of them:
+Krispr makes one small mistake in your code at a time, a **mutant**, and runs your tests against it.
+If `if (x > 0)` becomes `if (x >= 0)` and no test fails, the mutant **survived**: no test checks what
+happens at zero.
 
-| | Krispr | PIT |
-|---|---|---|
-| Survivors that are a real test gap | **61%** (95% CI 49–71%) | 14% (8–23%) |
-| Survivors that are compiler or inlined code | **0%** (0–5%) | 75% (64–84%) |
-| Mutants in `inline` functions left untested (kotlin-result) | 4 of 245 | 248 of 255 |
+Coverage says a line ran; a survivor says the line could be wrong and nothing would notice. In
+Thunderbird's IMAP sync, a boundary no test checked led to messages that appear and disappear on
+alternate syncs. In okio, a condition nearly 1,700 tests ran without checking led to
+`"/tmp".toPath() / "a:b"` returning `a:b` on Unix. Both are in
+[bench/results/bugs-found](bench/results/bugs-found) with a test that fails today and a fix.
 
-On clikt that comes to about 164 real test gaps from Krispr against 55 from PIT. Replayed on 45 merged pull
-requests, diff mode reported nothing on 33 and 49 survivors in all, 65% of them real gaps. A check against
-22 real bug fixes was inconclusive. The page also covers where Krispr is slower than PIT, what it misses,
-and what to fix next. [docs/validation.md](docs/validation.md) has the earlier runs, including nowinandroid.
+Use it on pull requests: diff mode reports the survivors on the lines a PR changed. Read each one and
+decide whether a test is missing; the score is a guide, not a grade, and some survivors can never be
+killed. [docs/usage.md](docs/usage.md#mutation-testing-in-five-minutes) is a five-minute guide to
+reading the output and keeping it quiet.
+
+Mutants are coupled to real faults ([Just et al., FSE 2014](https://doi.org/10.1145/2635868.2635929)).
+Once the size of a test suite is taken into account, the mutation score correlates only weakly with
+finding real faults ([Papadakis et al., ICSE 2018](https://doi.org/10.1145/3180155.3180183)), so use the
+survivors, not the score. Google shows survivors in code review and publishes no score
+([Petrović et al., TSE 2021](https://arxiv.org/abs/2102.11378)). [docs/evidence.md](docs/evidence.md) has
+Krispr's results on real projects, and [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md) the reasons behind its
+defaults.
 
 ## Quick start
 
@@ -68,25 +76,23 @@ Under `build/krispr/`:
 - `krispr.sarif`, for GitHub code scanning
 - `report.json`
 
-The headline score is **killed / covered**. Mutants that only excluded tests reach (screenshot tests,
-slow tests, quarantined tests) are **NOT_MEASURED** and don't count. Verdicts Krispr can't trust are
-**UNKNOWN**, never killed. [docs/usage.md](docs/usage.md) explains every status and output.
+[docs/usage.md](docs/usage.md) explains every status and output.
 
 Other things it does:
 
 - **Diff mode** (`diffBase`): mutates only the lines a PR changed. See [docs/diff-mode.md](docs/diff-mode.md)
   for a GitHub Actions workflow.
 - **Incremental runs**: reuses a verdict while the code and the tests behind it are unchanged.
-- **Arid code is skipped by default**: logging, DI wiring, `@Composable` bodies, caches, delays and
-  metrics. See [docs/tuning.md](docs/tuning.md).
+- **Code that isn't worth mutating is skipped by default**: logging, DI wiring, `@Composable` bodies,
+  caches, delays and metrics. See [docs/tuning.md](docs/tuning.md).
 
 ## Documentation
 
 | Page | Contents |
 |---|---|
-| [docs/usage.md](docs/usage.md) | Samples, reports, statuses and scores, incremental runs and diff mode |
+| [docs/usage.md](docs/usage.md) | A five-minute guide, then samples, reports, statuses, incremental runs and diff mode |
 | [docs/setup.md](docs/setup.md) | Applying it to JVM, Android and KMP modules, every setting, Kotlin versions |
-| [docs/tuning.md](docs/tuning.md) | Arid code, excluding mutants, speed and test selection |
+| [docs/tuning.md](docs/tuning.md) | What gets skipped, excluding mutants, speed and test selection |
 | [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md) | Why each default is what it is, with the research behind it |
 | [docs/evidence.md](docs/evidence.md), [docs/validation.md](docs/validation.md) | Results on real projects |
 | [docs/architecture.md](docs/architecture.md) | How the plugin, the instrumented build and the runner fit together |

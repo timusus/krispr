@@ -94,13 +94,13 @@ UNKNOWN is never counted as killed.
 
 ## What code to mutate
 
-Mutate **logic**, not presentation or plumbing. By default Krispr skips "arid" code, where mutants are
-noise or can't be killed. Google's arid heuristics raised the share of useful mutants from 15% to 89%.
+Mutate **logic**, not presentation or plumbing. By default Krispr skips code that isn't worth mutating, where mutants are
+noise or can't be killed. Google's heuristics for such code raised the share of useful mutants from 15% to 89%.
 
 - **Google's categories:** logging, memoization and cache lookups, sleeps, timeouts and delays, and
   metrics or analytics counters. The rules go by names (`getOrPut`, `cache[key] != null`, `delay`,
   `withTimeout`, `analytics.track*`, `metrics.*`, `counter.inc*`) and are conservative; docs/tuning.md lists
-  them. The value a `withTimeout` call returns is arid too (negating it repeats the block's own
+  them. The value a `withTimeout` call returns is skipped too (negating it repeats the block's own
   return-value mutant); the code inside the block is still mutated.
 - **Kotlin compiler-generated code:** data class members, coroutine state machines, null intrinsics,
   default-argument bridges, and similar. Mutating before code generation avoids most of it, which is the
@@ -137,7 +137,7 @@ Just et al., STVR'15 on non-redundant ROR). Google ships five. The set:
 - return values: Boolean returns negated, Int returns replaced by 0 (or 1), nullable returns replaced
   by `null`
 - elvis: `a ?: b` becomes `a!!`, so the fallback is never used
-- call removal: a Unit-returning call statement that is not arid is removed, and so is the block of an
+- call removal: a Unit-returning call statement that is not in skipped code is removed, and so is the block of an
   `also`, `apply`, or a `let` or `run` whose value nothing reads
 - chain call removal: a call that keeps its receiver's type is skipped (`filter`, `sorted`, `take`,
   `distinct`, …), and so is a value-preserving adjustment (`coerceIn`, `abs`, `trim`, a clamping

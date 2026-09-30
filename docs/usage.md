@@ -1,7 +1,93 @@
 # Using Krispr
 
-Running it, what it reports, incremental runs and diff mode. Setup for your own project is in
-[setup.md](setup.md); tuning what gets mutated and how fast it runs is in [tuning.md](tuning.md).
+## Mutation testing in five minutes
+
+### What a mutant and a survivor are
+
+Krispr makes one small mistake in your code, runs the tests that reach it, and repeats that for every
+mistake it can make. Each mistake is a **mutant**. Say `if (x > 0)` becomes `if (x >= 0)`. If a test
+fails, the mutant is **killed**: your tests noticed. If every test passes, it **survived**: no test
+checks what happens when `x` is zero.
+
+### Why bother
+
+Coverage says a line ran. A survivor says the line could be wrong and nothing would notice. Three
+survivors Krispr reported on open-source projects, and what reading them turned up:
+
+- In Thunderbird's IMAP sync, turning `>=` into `>` in the check that keeps messages inside the sync
+  window changed nothing any test saw. The check compares the `Date` header, while the server filters
+  by arrival date. A message that arrived recently with an old `Date` is downloaded on one sync, removed
+  on the next, and downloaded again after that.
+- In okio, dropping the "has a volume letter" test when resolving one path against another changed
+  nothing in nearly 1,700 tests. On Unix, `a:b` counts as being on volume `a:`, so
+  `"/tmp".toPath() / "a:b"` returns `a:b` and loses `/tmp`.
+- In Bitwarden, dropping an argument that formats dates changed nothing, because the tests only use
+  English. The locale picks the pattern but not the month names, so a French phone shows
+  "décembre 10, 2023" where the US format was asked for.
+
+Each is in [bench/results/bugs-found](../bench/results/bugs-found) with a test that fails today and a
+fix. Most survivors are less dramatic: a case a test should cover, not a bug.
+
+### How to use it
+
+Add the plugin to a module, then run it in diff mode on every pull request. Each PR gets the survivors
+on the lines it changed, a handful at most. That is the recommendation for apps:
+
+```sh
+./gradlew :module:krisprRun -Pkrispr.diffBase=origin/main
+```
+
+A whole-module run (`./gradlew :module:krisprRun`) is for a first look at a module that is mostly
+logic. [diff-mode.md](diff-mode.md) has a GitHub Actions workflow that posts the survivors on the PR.
+
+### How to read the output
+
+- **Killed**: a test failed with the mutant in place. Nothing to do.
+- **Survived**: every test that reaches the line passed. Read it and decide if a test is missing.
+- **No coverage**: no test runs the line at all.
+- **Not measured**: only tests Krispr leaves out reach it, such as screenshot or slow tests.
+
+The score is killed out of covered. It is a guide, not a grade. Don't try to kill every survivor;
+read them and write the tests that are worth having.
+
+### When a survivor matters and when it doesn't
+
+It matters where a wrong answer costs something: parsing, rules, money, sync, boundaries. It rarely
+matters in logging, analytics and UI wiring, or when the mutant is **equivalent**, which means it cannot
+change what the code does. For example, `if (a > b) a else b` becoming `if (a >= b) a else b` still
+returns the larger value, because the two only differ when `a == b`, and then both branches are the
+same. No test can kill that, so leave it.
+
+### Keeping it quiet
+
+- Code that isn't worth mutating is skipped by default: logging, analytics and metrics, DI wiring,
+  `@Composable` and `@Preview` bodies, caches, delays and timeouts, `toString`, `equals` and
+  `hashCode`, trivial getters and `@Generated` code. Google calls this "arid" code (Petrović and
+  Ivanković, [ICSE-SEIP 2018](https://doi.org/10.1145/3183519.3183521)). `mutate` turns a category back
+  on; see [tuning.md](tuning.md).
+- A line ending in `// krispr:ignore` gets no mutants, and a `.krispr-exclude` file drops them by file,
+  class, function, operator or line range ([tuning.md](tuning.md#excluding-mutants)).
+- `maxSurvivorsPerFile` (default 3) caps the survivors printed per file; the report keeps them all.
+- Screenshot tests don't count. They fail on any pixel change, so they would "kill" almost every UI
+  mutant without checking any behaviour. A mutant only they reach is not measured.
+- Android runs are slow. Every mutant a Robolectric test reaches needs Robolectric's sandbox, about 5 s
+  to build in a fresh JVM, and the module's Android build comes first. Krispr reuses sandboxes between
+  mutants, and diff mode keeps a PR's run small.
+
+### What the research says
+
+Mutants are coupled to real faults: tests that detect mutants tend to detect the real bugs too
+([Just et al., FSE 2014](https://doi.org/10.1145/2635868.2635929)). Once the size of a test suite is
+taken into account, the mutation score correlates only weakly with finding real faults
+([Papadakis et al., ICSE 2018](https://doi.org/10.1145/3180155.3180183)), so use the survivors, not the
+score. Google shows survivors to developers in code review and publishes no score
+([Petrović et al., TSE 2021](https://arxiv.org/abs/2102.11378)).
+
+[PHILOSOPHY.md](PHILOSOPHY.md) has the reasons behind each default, and [evidence.md](evidence.md) the
+results on real projects.
+
+The rest of this page covers the samples, every report and status, incremental runs and diff mode.
+Setup for your own project is in [setup.md](setup.md).
 
 ## Running it on the sample
 

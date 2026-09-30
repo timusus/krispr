@@ -19,7 +19,7 @@
   per compilation. Verdicts are reused (see [Incremental runs](usage.md#incremental-runs)), but the build and the
   recording run still happen every time.
 - **Equivalent mutants**: only swaps a literal makes equivalent are filtered (`x + 0`, `x * 1`, `x / -1`;
-  see [Arid code](tuning.md#arid-code)). In the validation run, about half of the sampled survivors were
+  see [Code that isn't worth mutating](tuning.md#code-that-isnt-worth-mutating)). In the validation run, about half of the sampled survivors were
   equivalent. Common cases:
   - boundary flips on assignments that give the same value
   - `> 0` → `>= 0` where the value is never 0

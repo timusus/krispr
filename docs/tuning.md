@@ -1,6 +1,6 @@
 # What gets mutated, and how fast
 
-## Arid code
+## Code that isn't worth mutating
 
 Some code has mutants that tests are not expected to kill, or that nobody would write a test to
 kill. Their survivors are noise that hides the useful ones, and each costs a fork. Krispr skips

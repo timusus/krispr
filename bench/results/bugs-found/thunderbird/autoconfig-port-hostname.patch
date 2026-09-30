@@ -1,0 +1,72 @@
+From 4aad7dd324c034fcd600763959d30a2a619edcd7 Mon Sep 17 00:00:00 2001
+From: Krispr bench <bench@krispr.dev>
+Date: Wed, 30 Sep 2026 04:40:24 +0000
+Subject: [PATCH] Reject port 0 and trim the hostname in autoconfig files
+
+---
+ .../autoconfig/RealAutoconfigParser.kt        |  4 +--
+ .../autoconfig/RealAutoconfigParserTest.kt    | 26 +++++++++++++++++++
+ 2 files changed, 28 insertions(+), 2 deletions(-)
+
+diff --git a/feature/autodiscovery/autoconfig/src/main/kotlin/app/k9mail/autodiscovery/autoconfig/RealAutoconfigParser.kt b/feature/autodiscovery/autoconfig/src/main/kotlin/app/k9mail/autodiscovery/autoconfig/RealAutoconfigParser.kt
+index 1e6c776..94e7004 100644
+--- a/feature/autodiscovery/autoconfig/src/main/kotlin/app/k9mail/autodiscovery/autoconfig/RealAutoconfigParser.kt
++++ b/feature/autodiscovery/autoconfig/src/main/kotlin/app/k9mail/autodiscovery/autoconfig/RealAutoconfigParser.kt
+@@ -208,7 +208,7 @@ private class ClientConfigParser(
+ 
+     private fun readHostname(): String {
+         val hostNameText = readText()
+-        val hostName = hostNameText.replaceVariables()
++        val hostName = HostNameUtils.cleanUpHostName(hostNameText.replaceVariables())
+         return hostName.takeIf { it.isValidHostname() }
+             ?: parserError("Invalid 'hostname' value: '$hostNameText'")
+     }
+@@ -305,7 +305,7 @@ private class ClientConfigParser(
+     }
+ 
+     @Suppress("MagicNumber")
+-    private fun Int.isValidPort() = this in 0..65535
++    private fun Int.isValidPort() = this in 1..65535
+ 
+     private fun String.replaceVariables(): String {
+         return replace("%EMAILDOMAIN%", domain)
+diff --git a/feature/autodiscovery/autoconfig/src/test/kotlin/app/k9mail/autodiscovery/autoconfig/RealAutoconfigParserTest.kt b/feature/autodiscovery/autoconfig/src/test/kotlin/app/k9mail/autodiscovery/autoconfig/RealAutoconfigParserTest.kt
+index 6bc892e..ea1fd19 100644
+--- a/feature/autodiscovery/autoconfig/src/test/kotlin/app/k9mail/autodiscovery/autoconfig/RealAutoconfigParserTest.kt
++++ b/feature/autodiscovery/autoconfig/src/test/kotlin/app/k9mail/autodiscovery/autoconfig/RealAutoconfigParserTest.kt
+@@ -484,6 +484,32 @@ class RealAutoconfigParserTest {
+             .prop(ParserError::error).hasMessage("Invalid 'port' value: '100000'")
+     }
+ 
++    @Test
++    fun `incomingServer with port 0 should throw`() {
++        val inputStream = minimalConfig.withModifications {
++            element("incomingServer > port").text("0")
++        }
++
++        val result = parser.parseSettings(inputStream, irrelevantEmailAddress)
++
++        assertThat(result).isInstanceOf<ParserError>()
++            .prop(ParserError::error).hasMessage("Invalid 'port' value: '0'")
++    }
++
++    @Test
++    fun `incomingServer hostname with surrounding whitespace is trimmed`() {
++        val inputStream = minimalConfig.withModifications {
++            element("incomingServer > hostname").text(" imap.domain.example\n")
++        }
++
++        val result = parser.parseSettings(inputStream, email = "user@domain.example".toUserEmailAddress())
++
++        assertThat(result).isInstanceOf<Settings>()
++            .prop(Settings::incomingServerSettings)
++            .transform { (it.single() as ImapServerSettings).hostname }
++            .isEqualTo("imap.domain.example".toHostname())
++    }
++
+     @Test
+     fun `incomingServer with unknown socketType should throw`() {
+         val inputStream = minimalConfig.withModifications {
+-- 
+2.43.0
+

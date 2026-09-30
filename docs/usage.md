@@ -26,7 +26,10 @@ survivors Krispr reported on open-source projects, and what reading them turned 
   "décembre 10, 2023" where the US format was asked for.
 
 Each is in [bench/results/bugs-found](../bench/results/bugs-found) with a test that fails today and a
-fix. Most survivors are less dramatic: a case a test should cover, not a bug.
+fix. Most survivors are less dramatic: a case a test should cover, not a bug. And a careful reader can
+find such bugs without survivors: in a comparison, readers given the same time found about as many
+([results](../bench/results/survivor-guided-reading/RESULTS.md)). Survivors earn their place by pointing
+at the untested lines of each change.
 
 ### How to use it
 

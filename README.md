@@ -25,6 +25,11 @@ alternate syncs. In okio, a condition nearly 1,700 tests ran without checking le
 `"/tmp".toPath() / "a:b"` returning `a:b` on Unix. Both are in
 [bench/results/bugs-found](bench/results/bugs-found) with a test that fails today and a fix.
 
+Survivors are not a shortcut to bugs, though. Given the same effort, readers without survivors found
+about as many bugs in the same modules, including most of those survivors had led to
+([the comparison](bench/results/survivor-guided-reading/RESULTS.md)). What survivors add is a short,
+specific list of lines no test checks, which is why diff mode is the way to use Krispr.
+
 Use it on pull requests: diff mode reports the survivors on the lines a PR changed. Read each one and
 decide whether a test is missing; the score is a guide, not a grade, and some survivors can never be
 killed. [docs/usage.md](docs/usage.md#mutation-testing-in-five-minutes) is a five-minute guide to

@@ -260,6 +260,16 @@ is a known open question (Papadakis et al., ICSE'18, see [PHILOSOPHY.md](PHILOSO
 check on 11 bugs cannot settle it either way.
 
 
+## 4. Do survivors lead to bugs a reader would miss?
+
+In four modules of Thunderbird, Bitwarden and StreetComplete, 16 AI agents read the code for bugs with
+the same instructions and effort; half also got Krispr's survivors. Every candidate got a unit test on
+main. Both arms found about 3.5 confirmed bugs per run, 16 distinct bugs without survivors and 19 with
+them, and the readers without survivors found more of the bugs survivors had led to earlier. Survivors
+helped clearly only in the largest scope, 131 files of StreetComplete. The protocol, written before the
+runs, and the results are in
+[bench/results/survivor-guided-reading](../bench/results/survivor-guided-reading/RESULTS.md).
+
 ## What this does not show
 
 - **The raters were Claude subagents, not developers.** They agreed with each other (kappa 0.90) and gave

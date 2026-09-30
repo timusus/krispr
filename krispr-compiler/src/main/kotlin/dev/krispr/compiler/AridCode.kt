@@ -26,7 +26,7 @@ import org.jetbrains.kotlin.ir.util.parentClassOrNull
 
 /**
  * Arid code: code whose mutants tests are not expected to kill, so they only add noise and run time.
- * Each category is skipped unless the build turns it back on (`krispr { mutateComposables = true }`
+ * Each category is skipped unless the build turns it back on (`krispr { mutate = listOf("composables") }`
  * and friends, passed as `-P plugin:dev.krispr:mutate=<option>`).
  */
 enum class AridCategory(val option: String) {

@@ -92,6 +92,11 @@ enum class Operator(val default: Boolean = true) {
     /** `scope.launch { … }`: the launched body is skipped; the job still starts and completes. */
     LAUNCH_BODY(default = true),
     /**
+     * `x.also { … }`, `x.apply { … }`, and `let { … }` or `run { … }` whose value nothing reads: the block is skipped.
+     * `also` and `apply` still return the receiver.
+     */
+    SCOPE_FUNCTION_BODY(default = true),
+    /**
      * `state.copy(loading = false, items = xs)` on a data class: one argument is left out, so that property
      * keeps the copied object's value (the field is not propagated). One mutant per argument.
      */
@@ -105,14 +110,20 @@ enum class Operator(val default: Boolean = true) {
      * `f(n = 3) → f()`: an argument written with its parameter's name, where the parameter has a default, is left
      * out, one mutant per argument. Not a data class `copy` (COPY_ARG_DROP has those).
      */
-    NAMED_DEFAULT_DROP(default = false),
+    NAMED_DEFAULT_DROP(default = true),
     /**
      * In a `when` over a sealed type, an `is A ->` or `B ->` branch runs the next such branch's body instead: that
      * case is handled as if it were another. Never towards a body that relies on a smart cast of the subject.
      */
     SEALED_WHEN_ROUTE(default = false),
-    /** Extreme mode only: the whole body of a function returns a default value. */
-    REMOVE_BODY(default = false),
+    /** `f(ignoreCase = true) → f(ignoreCase = false)`: a `true` or `false` literal argument is flipped. */
+    BOOLEAN_ARGUMENT(default = true),
+    /**
+     * `take(3) → take(4)` and `→ take(2)`: a number literal passed to `take`, `drop`, `takeLast`, `dropLast`,
+     * `chunked`, `windowed`, `subList`, `padStart`, `padEnd`, `coerceIn`, `coerceAtMost` or `coerceAtLeast` is moved
+     * by one. A count that would become negative, or a chunk or window size or step under one, is left out.
+     */
+    NUMERIC_ARGUMENT(default = true),
     ;
 
     companion object {
@@ -128,7 +139,7 @@ enum class Operator(val default: Boolean = true) {
             for (name in names) {
                 val upper = name.trim().uppercase()
                 if (upper == "DEFAULTS") selected += DEFAULTS
-                else selected += entries.firstOrNull { it.name == upper && it != REMOVE_BODY } ?: return null
+                else selected += entries.firstOrNull { it.name == upper } ?: return null
             }
             return selected
         }

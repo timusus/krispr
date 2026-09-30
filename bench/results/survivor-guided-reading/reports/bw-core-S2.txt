@@ -1,0 +1,4 @@
+MODULE bw-core
+C1 TemporalAccessorExtensions.kt:16 locale not passed to formatter; "décembre 10, 2023". Medium-high.
+C2 InstantExtensions.kt:10-15 isOverFiveMinutesOld truncation; 359s returns false. Medium.
+(says both found by reading, not from survivors; comparator odd cases judged unrealistic)

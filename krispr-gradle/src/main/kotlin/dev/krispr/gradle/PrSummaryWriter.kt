@@ -1,16 +1,19 @@
 package dev.krispr.gradle
 
 /**
- * GitHub-flavoured markdown for a PR comment: the headline covered score, then survivors grouped by file
+ * GitHub-flavoured markdown for a PR comment (`pr-summary.md`): a headline, then survivors grouped by file
  * in line order, each worded as a test someone could write (docs/PHILOSOPHY.md, "What a mutation score
- * measures"), capped at [Report.maxSurvivorsPerFile] per file.
+ * measures"), at most [Report.maxSurvivorsPerFile] per file and [MAX_SURVIVORS] in all. A diff-mode run
+ * (see [ReportSummary.diffBase]) leads with how many mutants the changed lines had instead of a score.
+ * krispr makes no GitHub API calls itself; a CI workflow posts the file (see docs/diff-mode.md).
  */
 internal object PrSummaryWriter {
+    const val MAX_SURVIVORS = 20
+
     fun write(report: Report): String {
-        val summary = report.summary
         val builder = StringBuilder()
         builder.append("## krispr report\n\n")
-        builder.append(headline(summary))
+        builder.append(headline(report))
         builder.append("\n\n")
 
         val survivors = report.survivors.sortedWith(compareBy({ it.file }, { it.line }, { it.column }, { it.id }))
@@ -21,20 +24,34 @@ internal object PrSummaryWriter {
 
         builder.append("### Survivors\n\n")
         val cap = report.maxSurvivorsPerFile.takeIf { it > 0 } ?: Int.MAX_VALUE
+        var shown = 0
+        var skipped = 0
         for ((file, inFile) in survivors.groupBy { it.file }) {
+            val room = MAX_SURVIVORS - shown
+            if (room == 0) {
+                skipped += inFile.size
+                continue
+            }
+            val listed = inFile.take(minOf(cap, room))
+            shown += listed.size
             builder.append("**").append(codeSpan(file)).append("**\n\n")
-            for (mutant in inFile.take(cap)) {
+            for (mutant in listed) {
                 builder.append("- ").append(testGoal(mutant)).append('\n')
             }
-            if (inFile.size > cap) {
-                builder.append("- _+${inFile.size - cap} more in the full report_\n")
+            if (inFile.size > listed.size) {
+                builder.append("- _+${inFile.size - listed.size} more in the full report_\n")
             }
             builder.append('\n')
         }
+        if (skipped > 0) builder.append("_+$skipped more in other files, in the full report_\n")
         return builder.toString().trimEnd('\n') + "\n"
     }
 
-    private fun headline(summary: ReportSummary): String {
+    private fun headline(report: Report): String {
+        val summary = report.summary
+        summary.diffBase?.let { ref ->
+            return "${report.mutants.size} mutants on lines changed since ${codeSpan(ref)}, ${report.survivors.size} survived."
+        }
         val covered = summary.coveredScore?.let { "$it%" } ?: "n/a"
         val valid = summary.mutationScore?.let { "$it%" } ?: "n/a"
         val notMeasured = summary.counts[MutantStatus.NOT_MEASURED] ?: 0

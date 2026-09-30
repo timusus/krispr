@@ -3,7 +3,7 @@ package dev.krispr.gradle
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * [KrisprExtension.confirmSurvivors]: which verdicts from a reused Robolectric sandbox need a fresh run,
+ * With `robolectric = "reuse"`: which verdicts from a reused Robolectric sandbox need a fresh run,
  * and how often the fresh run disagreed, which measures how often state left in a sandbox decides a verdict.
  */
 internal class SurvivorChecks(private val enabled: Boolean) {

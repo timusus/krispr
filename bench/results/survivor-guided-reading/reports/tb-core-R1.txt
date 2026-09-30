@@ -1,0 +1,6 @@
+MODULE tb-core
+C1 collections/PriorityQueue.kt:113-141 iterator remove skips sifted-up element; PriorityQueue(1,2,10,3,4,11,12,5,6).removeAll{11||6} leaves 6; also double remove. High.
+C2 state/debug/StateDiffer.kt:133-141 map diff by position. Medium.
+C3 StateDiffer.kt:163-192 same-size list change not shown. Medium.
+C4 state/StateMachine.kt:146-152 initial onEnter after 500ms delay called with current state (may be B). Test: StateMachineTest process(toB) immediately, advanceTimeBy, capturedNewState isInstanceOf A. Medium-low.
+C5 StateDiffer.kt:215,222 requireNotNull crash on null list element. Low.

@@ -1,0 +1,49 @@
+From d32af3adbbf35451ca22b57defbe69afb901ddfe Mon Sep 17 00:00:00 2001
+From: Krispr bench <bench@krispr.dev>
+Date: Wed, 30 Sep 2026 03:13:53 +0000
+Subject: [PATCH] Resolve a name containing a colon against a Unix path
+
+---
+ okio/src/commonMain/kotlin/okio/internal/Path.kt | 4 +++-
+ okio/src/commonTest/kotlin/okio/PathTest.kt      | 8 ++++++++
+ 2 files changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/okio/src/commonMain/kotlin/okio/internal/Path.kt b/okio/src/commonMain/kotlin/okio/internal/Path.kt
+index c5aeb7a..9e23d72 100644
+--- a/okio/src/commonMain/kotlin/okio/internal/Path.kt
++++ b/okio/src/commonMain/kotlin/okio/internal/Path.kt
+@@ -204,9 +204,11 @@ internal inline fun Path.commonResolve(child: Buffer, normalize: Boolean): Path
+ }
+ 
+ internal fun Path.commonResolve(child: Path, normalize: Boolean): Path {
+-  if (child.isAbsolute || child.volumeLetter != null) return child
++  if (child.isAbsolute) return child
+ 
+   val slash = slash ?: child.slash ?: Path.DIRECTORY_SEPARATOR.toSlash()
++  // "C:x" is on another volume only where paths use backslashes; with "/" it is a plain file name.
++  if (child.volumeLetter != null && slash == BACKSLASH) return child
+ 
+   val buffer = Buffer()
+   buffer.write(bytes)
+diff --git a/okio/src/commonTest/kotlin/okio/PathTest.kt b/okio/src/commonTest/kotlin/okio/PathTest.kt
+index 7830953..c12ceb1 100644
+--- a/okio/src/commonTest/kotlin/okio/PathTest.kt
++++ b/okio/src/commonTest/kotlin/okio/PathTest.kt
+@@ -24,6 +24,14 @@ import kotlin.test.assertTrue
+ import okio.Path.Companion.toPath
+ 
+ class PathTest {
++  @Test
++  fun resolveNameWithColonAgainstUnixPath() {
++    // On Unix "a:b" is an ordinary file name, not a path on volume "a:".
++    assertEquals("/tmp/a:b", ("/tmp".toPath() / "a:b").toString())
++    assertEquals("/tmp/x:1", "/tmp/".toPath().resolve("x:1").toString())
++    assertEquals("/tmp/a:b", ("/tmp".toPath() / "a:b".toPath()).toString())
++  }
++
+   @Test
+   fun unixRoot() {
+     val path = "/".toPath()
+-- 
+2.43.0
+

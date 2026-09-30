@@ -18,21 +18,20 @@ internal class Routing(private val robolectric: Boolean, private val recorded: M
 
     /**
      * The tests a mutant runs in a worker before any fork, or null when it runs only in forks. [reuse]:
-     * the module uses workers at all; [sandboxReuse]: `robolectricReuse = sandbox`. A sandbox loads each
+     * the module uses workers at all; [sandboxReuse]: `robolectric = "reuse"`. A sandbox loads each
      * class once for every mutant it serves, so an [initializer] mutant would not run in it again, and a
      * mutated static value would outlive its mutant. Tests in [unsafe] failed the reuse check and run in
      * a fresh JVM, but the mutant's other tests may kill it first in a worker (#43); only a kill counts
-     * there, as the rest never ran. The kill matrix needs every test's verdict, so it forks such a mutant.
+     * there, as the rest never ran.
      */
     fun workerTests(
-        tests: List<String>, initializer: Boolean, reuse: Boolean, sandboxReuse: Boolean, unsafe: Set<String>, killMatrix: Boolean,
+        tests: List<String>, initializer: Boolean, reuse: Boolean, sandboxReuse: Boolean, unsafe: Set<String>,
     ): List<String>? {
         val reusable = reuse && (!sandboxed(tests) || (sandboxReuse && !initializer))
         val safe = tests.filter { it !in unsafe }
         return when {
             !reusable || safe.isEmpty() -> null
             safe.size == tests.size -> tests
-            killMatrix -> null
             else -> safe
         }
     }

@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="delivery_days">Arrives in %1$d days</string>
-    <string name="delivery_tomorrow">Arrives tomorrow</string>
-    <string name="card_ending">Card ending %1$s</string>
-</resources>

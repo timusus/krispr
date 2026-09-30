@@ -6,60 +6,36 @@ import org.gradle.api.provider.Provider
 import org.jetbrains.kotlin.gradle.plugin.SubpluginOption
 import java.io.File
 
-/** `mutate=<category>` for every arid-code category the build turned back on (see AridCode in the compiler). */
-internal fun aridOptions(extension: KrisprExtension): List<SubpluginOption> =
-    listOf(
-        extension.mutateComposables to "composables",
-        extension.mutateLogging to "logging",
-        extension.mutateDependencyInjection to "dependencyInjection",
-        extension.mutateToString to "toString",
-        extension.mutateEqualsHashCode to "equalsHashCode",
-        extension.mutateTrivialGetters to "trivialGetters",
-        extension.mutateCaches to "caches",
-        extension.mutateDelays to "delays",
-        extension.mutateMetrics to "metrics",
-        extension.mutateGenerated to "generated",
-    ).filter { (enabled, _) -> enabled.orNull == true }.map { (_, option) -> SubpluginOption("mutate", option) }
+/** The kinds of code skipped by default that `krispr.mutate` can turn back on; the compiler's AridCategory options. */
+internal val MUTATE_CATEGORIES = listOf(
+    "composables", "logging", "dependencyInjection", "toString", "equalsHashCode",
+    "trivialGetters", "caches", "delays", "metrics", "generated",
+)
 
-
-internal const val EXTREME = "extreme"
-
-/** `krispr.mode`, with `-Pkrispr.mode` winning over the build script. */
-internal fun modeOf(project: Project, extension: KrisprExtension): Provider<String> =
-    project.providers.gradleProperty("krispr.mode").orElse(extension.mode).orElse("default").map { mode ->
-        mode.trim().lowercase().also {
-            if (it != "default" && it != EXTREME) throw GradleException("krispr: mode must be 'default' or '$EXTREME', not '$mode'")
-        }
+/** `mutate=<category>` for every kind of skipped code the build turned back on (see AridCode in the compiler). */
+internal fun aridOptions(extension: KrisprExtension): List<SubpluginOption> {
+    val categories = extension.mutate.orElse(emptyList()).get().map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+    categories.firstOrNull { it !in MUTATE_CATEGORIES }?.let {
+        throw GradleException("krispr: mutate has '$it'; use any of ${MUTATE_CATEGORIES.joinToString(", ")}")
     }
+    return categories.map { SubpluginOption("mutate", it) }
+}
 
 /** `krispr.operators`, with `-Pkrispr.operators=A,B` winning over the build script. */
 internal fun operatorsOf(project: Project, extension: KrisprExtension): Provider<List<String>> =
     project.providers.gradleProperty("krispr.operators").map { value -> value.split(',').map { it.trim() }.filter { it.isNotEmpty() } }
         .orElse(extension.operators).orElse(emptyList())
 
-/** `krispr.showChanges`, with `-Pkrispr.showChanges` winning over the build script. Default false. */
-internal fun showChangesOf(project: Project, extension: KrisprExtension): Provider<Boolean> =
-    project.providers.gradleProperty("krispr.showChanges").map { it.trim().toBoolean() }.orElse(extension.showChanges).orElse(false)
-
-/** `operator=<name>` per selected operator, and `mode=extreme`; the compiler plugin checks the names. */
+/** `operator=<name>` per selected operator; the compiler plugin checks the names. */
 internal fun operatorOptions(project: Project, extension: KrisprExtension): List<SubpluginOption> =
-    operatorsOf(project, extension).get().map { SubpluginOption("operator", it) } +
-        listOfNotNull(
-            SubpluginOption("mode", EXTREME).takeIf { modeOf(project, extension).get() == EXTREME },
-            // Only with showChanges: the value probes are otherwise not emitted at all.
-            SubpluginOption("probe", "true").takeIf { showChangesOf(project, extension).get() },
-        )
+    operatorsOf(project, extension).get().map { SubpluginOption("operator", it) }
 
 /** `krispr.targetFiles`, with `-Pkrispr.targetFiles=a.kt,b.kt` winning over the build script. */
 internal fun targetFilesOf(project: Project, extension: KrisprExtension): Provider<List<String>> =
     project.providers.gradleProperty("krispr.targetFiles").map { value -> value.split(',').map { it.trim() }.filter { it.isNotEmpty() } }
         .orElse(extension.targetFiles).orElse(emptyList())
 
-/**
- * `krispr.diffBase`, with `-Pkrispr.diffBase=<ref>` winning over the build script. `krisprRun --since`
- * is a separate, task-only override (see [KrisprRunTask.since]) that filters mutants by line but does not
- * reach here, so it does not narrow instrumentation.
- */
+/** `krispr.diffBase`, with `-Pkrispr.diffBase=<ref>` winning over the build script. */
 internal fun diffBaseOf(project: Project, extension: KrisprExtension): Provider<String> =
     project.providers.gradleProperty("krispr.diffBase").orElse(extension.diffBase)
 

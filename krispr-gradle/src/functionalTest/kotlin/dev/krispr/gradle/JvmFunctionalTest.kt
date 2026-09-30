@@ -140,6 +140,51 @@ class JvmFunctionalTest {
     }
 
     @Test
+    fun `a test that fails with no mutant active is barred from killing and the run goes on`(@TempDir dir: File) {
+        writeProject(
+            dir,
+            main = mapOf(
+                "Broken.kt" to "fun broken(a: Int) = a + 1",
+                "Calc.kt" to "fun add(a: Int, b: Int) = a + b",
+            ),
+            test = mapOf(
+                "BrokenTest.kt" to "class BrokenTest { @kotlin.test.Test fun fails() = kotlin.test.assertEquals(0, broken(1)) }",
+                "CalcTest.kt" to "class CalcTest { @kotlin.test.Test fun adds() = kotlin.test.assertEquals(5, add(2, 3)) }",
+            ),
+        )
+
+        val result = run(dir, "krisprRun")
+
+        assertTrue("1 tests fail with no mutant active and may not kill mutants: fails()" in result.output, result.output)
+        val report = report(dir)
+        assertTrue("its tests fail without the mutant" in report, report)
+        assertTrue(count(report, "KILLED") >= 1, report)
+    }
+
+    @Test
+    fun `a JUnit Platform test task that does not declare the launcher gets the one matching its engine`(@TempDir dir: File) {
+        // Gradle before 9 supplies the launcher to its own test task, so such builds never declare it.
+        writeProject(
+            dir,
+            main = mapOf("Calc.kt" to "fun add(a: Int, b: Int) = a + b"),
+            test = mapOf(
+                "CalcTest.kt" to """
+                    class CalcTest {
+                        @org.junit.jupiter.api.Test fun adds() = org.junit.jupiter.api.Assertions.assertEquals(5, add(2, 3))
+                    }
+                """.trimIndent(),
+            ),
+            testDependencies = "testImplementation(\"org.junit.jupiter:junit-jupiter:5.10.2\")",
+        )
+
+        run(dir, "krisprRun")
+
+        val report = report(dir)
+        assertTrue(count(report, "KILLED") >= 1, report)
+        assertEquals(0, count(report, "SURVIVED"), report)
+    }
+
+    @Test
     fun `slow tests kill only when included, within the budget`(@TempDir dir: File) {
         val main = mapOf("Calc.kt" to "fun add(a: Int, b: Int) = a + b\nfun sub(a: Int, b: Int) = a - b")
         val test = mapOf(
@@ -183,7 +228,7 @@ class JvmFunctionalTest {
         git(dir, "-c", "user.name=krispr", "-c", "user.email=krispr@example.com", "commit", "-q", "-m", "initial")
         dir.resolve("src/main/kotlin/Calc.kt").writeText(calc.replace("= a - b", "= (a - b) * 2"))
 
-        val result = run(dir, "krisprRun", "--since", "HEAD")
+        val result = run(dir, "krisprRun", "-Pkrispr.diffBase=HEAD")
 
         val report = report(dir)
         val lines = Regex("\"line\"\\s*:\\s*(\\d+)").findAll(report).map { it.groupValues[1].toInt() }.toSet()
@@ -217,7 +262,7 @@ class JvmFunctionalTest {
         gitInit(dir)
         // No edit after the commit: nothing changed since HEAD.
 
-        val result = run(dir, "krisprRun", "--since", "HEAD")
+        val result = run(dir, "krisprRun", "-Pkrispr.diffBase=HEAD")
 
         assertTrue("0 mutants" in result.output || "0 of 0 mutants" in result.output, result.output)
         assertEquals(0, count(report(dir), "total"), result.output)
@@ -247,16 +292,16 @@ class JvmFunctionalTest {
         gitInit(dir)
         dir.resolve("src/main/kotlin/Calc.kt").writeText(calc.replace("a + b", "a + b + 0"))
 
-        val default = run(dir, "krisprRun", "--since", "HEAD")
+        val default = run(dir, "krisprRun", "-Pkrispr.diffBase=HEAD")
         assertTrue(count(report(dir), "SURVIVED") > 0, default.output)
 
-        val failed = runner(dir, "krisprRun", "--since", "HEAD", "-Pkrispr.diffFailOnSurvivors=true").buildAndFail()
+        val failed = runner(dir, "krisprRun", "-Pkrispr.diffBase=HEAD", "-Pkrispr.diffFailOnSurvivors=true").buildAndFail()
         assertTrue("survived on lines changed since HEAD" in failed.output, failed.output)
 
         // An assertion kills the mutant: diffFailOnSurvivors has nothing to fail on.
         val kills = mapOf("CalcTest.kt" to "class CalcTest { @kotlin.test.Test fun calls() = kotlin.test.assertEquals(3, add(1, 2)) }")
         writeProject(dir, mapOf("Calc.kt" to calc.replace("a + b", "a + b + 0")), kills)
-        val passed = runner(dir, "krisprRun", "--since", "HEAD", "-Pkrispr.diffFailOnSurvivors=true").build()
+        val passed = runner(dir, "krisprRun", "-Pkrispr.diffBase=HEAD", "-Pkrispr.diffFailOnSurvivors=true").build()
         assertEquals(0, count(report(dir), "SURVIVED"), passed.output)
     }
 
@@ -399,37 +444,6 @@ class JvmFunctionalTest {
         val fourth = runners(report(dir))
         assertTrue(fourth.filterKeys { it.startsWith("Scale.kt") }.values.none { it == "history" }, fourth.toString())
         assertEquals(setOf("history"), fourth.filterKeys { it.startsWith("Calc.kt") }.values.toSet(), fourth.toString())
-    }
-
-    @Test
-    fun `extreme mode lists pseudo-tested functions and gives no score`(@TempDir dir: File) {
-        writeProject(
-            dir,
-            main = mapOf(
-                "Cart.kt" to """
-                    class Cart {
-                        private val prices = mutableListOf<Int>()
-                        fun add(price: Int) { prices.add(price) }
-                        fun total(): Int = prices.sum()
-                        fun count(): Int = prices.size
-                        fun isEmpty(): Boolean = prices.isEmpty()
-                    }
-                """.trimIndent(),
-            ),
-            // count() runs but nothing checks it; isEmpty() never runs.
-            test = mapOf("CartTest.kt" to "class CartTest { @kotlin.test.Test fun totals() { val c = Cart(); c.add(2); c.add(3); c.count(); kotlin.test.assertEquals(5, c.total()) } }"),
-        )
-
-        val result = run(dir, "krisprRun", "-Pkrispr.mode=extreme")
-
-        val report = report(dir)
-        assertTrue("\"mode\": \"extreme\"" in report, report)
-        assertEquals(1, count(report, "pseudoTested"), report)
-        val listed = report.substringAfter("\"pseudoTested\": [").substringBefore("]")
-        assertTrue("\"Cart.count(" in listed && "Cart.total" !in listed, report)
-        assertEquals(1, count(report, "NO_COVERAGE"), report)
-        assertEquals(-1, count(report, "mutationScore"), report)
-        assertTrue("1 pseudo-tested" in result.output && "Cart.count(" in result.output, result.output)
     }
 
     @Test
@@ -603,21 +617,21 @@ class JvmFunctionalTest {
         // No mutant survives without the unsafe test having run against it.
         val survivors = mutants.filter { it.status == "SURVIVED" }
         assertTrue(survivors.isNotEmpty() && survivors.all { it.line == 3 }, "survivors: $survivors")
-        assertTrue(survivors.all { it.runner == "fork" && "OnceTest.once" in it.testedTests }, "survivors: $survivors")
+        assertTrue(survivors.all { it.runner == "fork" && "OnceTest.once" in it.tests }, "survivors: $survivors")
         val partial = Regex("krispr: (\\d+) mutants reach tests that fail in a reused JVM; (\\d+) of them were killed in one").find(result.output)
         assertTrue(partial != null && partial.groupValues[1].toInt() == mutants.size, result.output)
         assertEquals(on(1).size + on(2).count { it.runner == "worker" } + on(3).count { it.runner == "worker" }, partial!!.groupValues[2].toInt(), result.output)
     }
 
-    private data class ReportedMutant(val line: Int, val status: String, val runner: String?, val killedBy: String?, val testedTests: String)
+    private data class ReportedMutant(val line: Int, val status: String, val runner: String?, val killedBy: String?, val tests: String)
 
-    /** Each mutant in [report], with its `testedTests` array as raw text. */
+    /** Each mutant in [report], with its `tests` array as raw text. */
     private fun mutants(report: String): List<ReportedMutant> =
         report.substringAfter("\"mutants\"").split(Regex("\"id\"\\s*:")).drop(1).map { chunk ->
             fun field(name: String) = Regex("\"$name\"\\s*:\\s*\"?([^\",\n]*)").find(chunk)?.groupValues?.get(1)
             ReportedMutant(
                 field("line")!!.toInt(), field("status")!!, field("runner"), field("killedBy"),
-                Regex("\"testedTests\"\\s*:\\s*\\[([^\\]]*)]").find(chunk)?.groupValues?.get(1).orEmpty(),
+                Regex("\"tests\"\\s*:\\s*\\[([^\\]]*)]").find(chunk)?.groupValues?.get(1).orEmpty(),
             )
         }
 
@@ -841,47 +855,6 @@ class JvmFunctionalTest {
         )
     }
 
-    @Test
-    fun `showChanges reports what each survivor changed, and leaves no trace when off`(@TempDir dir: File) {
-        writeProject(
-            dir,
-            main = mapOf(
-                "Cart.kt" to """
-                    class Cart { var total = 0; fun add(price: Int) { total = total + price } }
-                    fun isFree(total: Int): Boolean { return total == 0 }
-                    fun count(n: Int): Int = if (n > 0) n else 0
-                """.trimIndent(),
-            ),
-            test = mapOf(
-                "CartTest.kt" to """
-                    class CartTest {
-                        @kotlin.test.Test fun adds() { Cart().add(5) }
-                        @kotlin.test.Test fun free() { isFree(5) }
-                        @kotlin.test.Test fun counts() { kotlin.test.assertEquals(3, count(3)); kotlin.test.assertEquals(0, count(-1)) }
-                    }
-                """.trimIndent(),
-            ),
-            krispr = "operators.set(listOf(\"DEFAULTS\", \"REMOVE_ASSIGNMENT\"))",
-        )
-
-        val on = run(dir, "krisprRun", "-Pkrispr.showChanges=true")
-        assertTrue("what changed: original: 5 → mutant: 0" in on.output, on.output)
-        assertTrue("what changed: original: false → mutant: true" in on.output, on.output)
-        assertTrue("krispr: showChanges probed" in on.output, on.output)
-        val probed = report(dir)
-        assertTrue(Regex("\"verdict\"\\s*:\\s*\"changed\"").containsMatchIn(probed), probed)
-        val instrumented = dir.resolve("build/krispr/build/classes")
-        assertTrue(classMentions(instrumented, "isProbed"), "the instrumented build carries probes with showChanges")
-
-        val off = run(dir, "krisprRun", "-Pkrispr.history=false")
-        assertTrue("what changed" !in off.output, off.output)
-        assertTrue("\"change\"" !in report(dir), report(dir))
-        assertTrue(!classMentions(instrumented, "isProbed"), "no probes without showChanges")
-    }
-
-    private fun classMentions(dir: File, text: String): Boolean =
-        dir.walkTopDown().filter { it.isFile && it.extension == "class" }.any { String(it.readBytes(), Charsets.ISO_8859_1).contains(text) }
-
     private fun git(dir: File, vararg arguments: String) {
         val process = ProcessBuilder(listOf("git") + arguments).directory(dir).inheritIO().start()
         assertEquals(0, process.waitFor(), "git ${arguments.joinToString(" ")}")
@@ -965,6 +938,44 @@ class JvmFunctionalTest {
         assertTrue(Regex("\"status\"\\s*:\\s*\"UNKNOWN\"[^}]*\"reason\"\\s*:\\s*\"host too slow: its tests also ran past").containsMatchIn(report), report)
         assertTrue(result.output.contains(Regex("unknown \\([1-9]\\d* timed out on a slow host\\)")), result.output)
         assertTrue(dir.resolve("build/krispr/logs").list().orEmpty().any { it.endsWith("-control.log") })
+    }
+
+    @Test
+    fun `runs in a build with isolated projects`(@TempDir dir: File) {
+        writeProject(dir)
+        dir.resolve("build.gradle.kts").writeText(
+            """
+            plugins {
+                kotlin("jvm") version "$KOTLIN" apply false
+                id("dev.krispr") apply false
+            }
+            """.trimIndent(),
+        )
+        dir.resolve("settings.gradle.kts").appendText("\ninclude(\":a\", \":b\")\n")
+        dir.resolve("gradle.properties").appendText("\norg.gradle.unsafe.isolated-projects=true\n")
+        for (module in listOf("a", "b")) {
+            dir.resolve("$module/build.gradle.kts").apply { parentFile.mkdirs() }.writeText(
+                """
+                plugins {
+                    kotlin("jvm")
+                    id("dev.krispr")
+                }
+                kotlin { jvmToolchain(21) }
+                dependencies { testImplementation(kotlin("test")) }
+                tasks.test { useJUnitPlatform() }
+                """.trimIndent(),
+            )
+            dir.resolve("$module/src/main/kotlin/Calc.kt").apply { parentFile.mkdirs() }.writeText("fun add(a: Int, b: Int) = a + b")
+            dir.resolve("$module/src/test/kotlin/CalcTest.kt").apply { parentFile.mkdirs() }
+                .writeText("class CalcTest { @kotlin.test.Test fun adds() = kotlin.test.assertEquals(5, add(2, 3)) }")
+        }
+
+        run(dir, "krisprRun")
+
+        for (module in listOf("a", "b")) {
+            val report = dir.resolve("$module/build/krispr/report.json").readText()
+            assertTrue(count(report, "KILLED") >= 1, report)
+        }
     }
 
     @Test
@@ -1132,6 +1143,7 @@ class JvmFunctionalTest {
         krispr: String = "",
         forceCompilerVersion: String? = null,
         buildScript: String = "",
+        testDependencies: String = "testImplementation(kotlin(\"test\"))",
     ) {
         val repo = System.getProperty("krispr.repo").replace("\\", "/")
         val version = System.getProperty("krispr.version")
@@ -1176,7 +1188,7 @@ class JvmFunctionalTest {
                 id("dev.krispr")
             }
             kotlin { jvmToolchain(21) }
-            dependencies { testImplementation(kotlin("test")) }
+            dependencies { $testDependencies }
             tasks.test { useJUnitPlatform() }
             $forceCompiler
             krispr {

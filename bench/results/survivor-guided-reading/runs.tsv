@@ -1,0 +1,17 @@
+run	module	arm	replicate	candidates	confirmed	tokens	tool_calls
+bw-core-R1	bw-core	R	1	B1,B2	1	89333	11
+bw-core-R2	bw-core	R	2	B3,B1,B4	3	94775	15
+bw-core-S1	bw-core	S	1	B3,B1	2	93139	17
+bw-core-S2	bw-core	S	2	B3,B1	2	92483	16
+sc-R1	sc	R	1	S1,S3,S2,S4	3	183679	54
+sc-R2	sc	R	2	S1,S2	1	173984	44
+sc-S1	sc	S	1	S8,S5,S6,S9,S10	5	210035	51
+sc-S2	sc	S	2	S5,S1,S6,S7	4	180529	49
+tb-core-R1	tb-core	R	1	T1,T2,T4,T3,T6,T5	6	128839	26
+tb-core-R2	tb-core	R	2	T1,T2,T3,T4,T5	5	131672	22
+tb-core-S1	tb-core	S	1	T1,T2,T3,T4,T5,T8	6	135754	27
+tb-core-S2	tb-core	S	2	T7,T1,T2,T5	4	106224	21
+tb-mail-R1	tb-mail	R	1	M1,M2,M3,M4,M5	4	116048	26
+tb-mail-R2	tb-mail	R	2	M1,M2,M3,M5	4	115591	29
+tb-mail-S1	tb-mail	S	1	M1,M3,M4,M5	3	125080	31
+tb-mail-S2	tb-mail	S	2	M1,M3,M4	2	118445	26

@@ -14,8 +14,8 @@ class RoutingTest {
     private val routing = Routing(robolectric = true, recorded)
 
     /** A sandbox-reuse module whose workers passed the reuse check; [unsafe] tests failed it. */
-    private fun Routing.worker(tests: List<String>, initializer: Boolean = false, sandboxReuse: Boolean = true, unsafe: Set<String> = emptySet(), killMatrix: Boolean = false) =
-        workerTests(tests, initializer, reuse = true, sandboxReuse = sandboxReuse, unsafe = unsafe, killMatrix = killMatrix)
+    private fun Routing.worker(tests: List<String>, initializer: Boolean = false, sandboxReuse: Boolean = true, unsafe: Set<String> = emptySet()) =
+        workerTests(tests, initializer, reuse = true, sandboxReuse = sandboxReuse, unsafe = unsafe)
 
     @Test
     fun aMutantOnlyPlainTestsReachIsNotSandboxed() {
@@ -51,7 +51,7 @@ class RoutingTest {
         assertEquals(listOf("robo"), plainModule.worker(listOf("robo"), initializer = true, sandboxReuse = false))
     }
 
-    /** `robolectricReuse = fresh` forks sandboxed mutants, and still runs plain-only ones, initializers too, in workers. */
+    /** `robolectric = "fresh"` forks sandboxed mutants, and still runs plain-only ones, initializers too, in workers. */
     @Test
     fun freshModeForksOnlySandboxedMutants() {
         assertNull(routing.worker(listOf("plain", "robo"), sandboxReuse = false))
@@ -69,7 +69,7 @@ class RoutingTest {
 
     @Test
     fun noWorkerWithoutReuse() {
-        assertNull(routing.workerTests(listOf("plain"), initializer = false, reuse = false, sandboxReuse = true, unsafe = emptySet(), killMatrix = false))
+        assertNull(routing.workerTests(listOf("plain"), initializer = false, reuse = false, sandboxReuse = true, unsafe = emptySet()))
     }
 
     /** #43: a mutant's reuse-safe tests run in a worker first; the unsafe ones only ever in a fork. */
@@ -77,11 +77,5 @@ class RoutingTest {
     fun aMutantReachingUnsafeTestsRunsOnlyItsSafeOnesInAWorker() {
         assertEquals(listOf("plain", "plain2"), routing.worker(listOf("plain", "flaky", "plain2"), unsafe = setOf("flaky")))
         assertNull(routing.worker(listOf("flaky"), unsafe = setOf("flaky")))
-    }
-
-    @Test
-    fun theKillMatrixForksAMutantReachingUnsafeTests() {
-        assertNull(routing.worker(listOf("plain", "flaky"), unsafe = setOf("flaky"), killMatrix = true))
-        assertEquals(listOf("plain"), routing.worker(listOf("plain"), unsafe = setOf("flaky"), killMatrix = true))
     }
 }

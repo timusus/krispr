@@ -1,0 +1,71 @@
+From 2cf9e8e17b4a23dbd3aeea45e733693cec5faa57 Mon Sep 17 00:00:00 2001
+From: Krispr bench <bench@krispr.dev>
+Date: Wed, 30 Sep 2026 00:27:37 +0000
+Subject: [PATCH] Map an annotated use of an alias-imported class to its import
+
+importableType kept the annotations of the ClassName it recorded for an aliased
+import. An annotated use (List<@Ann Inner>) then did not match the plain class,
+so it was written fully qualified although the alias import was emitted, and a
+file with both an annotated and a plain use failed with "Collection has more
+than one element".
+---
+ .../com/squareup/kotlinpoet/CodeWriter.kt     |  3 +-
+ .../kotlinpoet/AliasedAnnotatedImportTest.kt  | 32 +++++++++++++++++++
+ 2 files changed, 34 insertions(+), 1 deletion(-)
+ create mode 100644 kotlinpoet/src/jvmTest/kotlin/com/squareup/kotlinpoet/AliasedAnnotatedImportTest.kt
+
+diff --git a/kotlinpoet/src/jvmMain/kotlin/com/squareup/kotlinpoet/CodeWriter.kt b/kotlinpoet/src/jvmMain/kotlin/com/squareup/kotlinpoet/CodeWriter.kt
+index 87bc3c68..dc48568a 100644
+--- a/kotlinpoet/src/jvmMain/kotlin/com/squareup/kotlinpoet/CodeWriter.kt
++++ b/kotlinpoet/src/jvmMain/kotlin/com/squareup/kotlinpoet/CodeWriter.kt
+@@ -537,7 +537,8 @@ internal class CodeWriter(
+         if (alias == null) {
+           topLevelClassName
+         } else {
+-          className.copy(nullable = false) as ClassName
++          // Without its annotations, so every use of the class maps to the one import.
++          className.copy(nullable = false, annotations = emptyList()) as ClassName
+         }
+       importableTypes[simpleName] = importableTypes.getValue(simpleName) + newImportTypes
+     }
+diff --git a/kotlinpoet/src/jvmTest/kotlin/com/squareup/kotlinpoet/AliasedAnnotatedImportTest.kt b/kotlinpoet/src/jvmTest/kotlin/com/squareup/kotlinpoet/AliasedAnnotatedImportTest.kt
+new file mode 100644
+index 00000000..eeaf94da
+--- /dev/null
++++ b/kotlinpoet/src/jvmTest/kotlin/com/squareup/kotlinpoet/AliasedAnnotatedImportTest.kt
+@@ -0,0 +1,32 @@
++package com.squareup.kotlinpoet
++
++import com.google.common.truth.Truth.assertThat
++import com.squareup.kotlinpoet.ParameterizedTypeName.Companion.parameterizedBy
++import kotlin.test.Test
++
++class AliasedAnnotatedImportTest {
++  private val inner = ClassName("com.example", "Outer", "Inner")
++  private val annotated = inner.copy(annotations = listOf(AnnotationSpec.builder(ClassName("com.example", "Ann")).build()))
++
++  @Test
++  fun annotatedAndPlainUseOfAnAliasedClass() {
++    val source =
++      FileSpec.builder("com.squareup.tacos", "Taco")
++        .addAliasedImport(inner, "Al")
++        .addProperty(PropertySpec.builder("a", LIST.parameterizedBy(annotated)).initializer("listOf()").build())
++        .addProperty(PropertySpec.builder("b", inner).initializer("TODO()").build())
++        .build()
++    assertThat(source.toString()).contains("public val a: List<@Ann Al> = listOf()")
++    assertThat(source.toString()).contains("public val b: Al = TODO()")
++  }
++
++  @Test
++  fun annotatedUseOfAnAliasedClass() {
++    val source =
++      FileSpec.builder("com.squareup.tacos", "Taco")
++        .addAliasedImport(inner, "Al")
++        .addProperty(PropertySpec.builder("a", LIST.parameterizedBy(annotated)).initializer("listOf()").build())
++        .build()
++    assertThat(source.toString()).contains("public val a: List<@Ann Al> = listOf()")
++  }
++}
+-- 
+2.43.0
+

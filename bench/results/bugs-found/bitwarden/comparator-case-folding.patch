@@ -1,0 +1,80 @@
+From 75bca5b8b71ff8e3baf4c691a10dfd3d8e3b716d Mon Sep 17 00:00:00 2001
+From: Krispr bench <bench@krispr.dev>
+Date: Wed, 30 Sep 2026 01:39:42 +0000
+Subject: [PATCH 1/2] Sort letters that are equal ignoring case in the same
+ place
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+SpecialCharWithPrecedenceComparator treats two letters as the same when
+equals(ignoreCase = true) says so, but ordered every other pair by the
+uppercase of each character as it is. 'İ' (U+0130) equals 'I' ignoring case
+yet sorts after 'J', so "İa" < "Ib" < "J" < "İa": the comparator was not
+transitive, which breaks the Comparator contract that sorting relies on. The
+same holds for the Kelvin sign and 'K'. Fold each character's case the way
+equals(ignoreCase = true) does before comparing.
+---
+ .../util/SpecialCharWithPrecedenceComparator.kt    | 14 +++++++++++---
+ .../SpecialCharWithPrecedenceComparatorTest.kt     | 10 ++++++++++
+ 2 files changed, 21 insertions(+), 3 deletions(-)
+
+diff --git a/core/src/main/kotlin/com/bitwarden/core/data/repository/util/SpecialCharWithPrecedenceComparator.kt b/core/src/main/kotlin/com/bitwarden/core/data/repository/util/SpecialCharWithPrecedenceComparator.kt
+index a30a810..8c9c4a4 100644
+--- a/core/src/main/kotlin/com/bitwarden/core/data/repository/util/SpecialCharWithPrecedenceComparator.kt
++++ b/core/src/main/kotlin/com/bitwarden/core/data/repository/util/SpecialCharWithPrecedenceComparator.kt
+@@ -38,14 +38,22 @@ private fun compareCharsSpecialCharsWithPrecedence(c1: Char, c2: Char): Int {
+         }
+ 
+         else -> {
+-            // Use Locale.ROOT for consistent, locale-insensitive comparison
+-            val upperCaseStr1 = c1.toString().uppercase(Locale.ROOT)
+-            val upperCaseStr2 = c2.toString().uppercase(Locale.ROOT)
++            // Use Locale.ROOT for consistent, locale-insensitive comparison. Fold the case first, the
++            // way equals(ignoreCase = true) does, so that letters it treats as equal ('İ' and 'I', or
++            // the Kelvin sign and 'K') also sort in the same place relative to every other character.
++            val upperCaseStr1 = c1.foldCase().toString().uppercase(Locale.ROOT)
++            val upperCaseStr2 = c2.foldCase().toString().uppercase(Locale.ROOT)
+             upperCaseStr1.compareTo(upperCaseStr2)
+         }
+     }
+ }
+ 
++/**
++ * The character [Char.equals] with `ignoreCase = true` compares: two characters are equal ignoring
++ * case exactly when they fold to the same one.
++ */
++private fun Char.foldCase(): Char = uppercaseChar().lowercaseChar().uppercaseChar()
++
+ /**
+  * Compare two equal letters ignoring case (i.e. 'A' == 'a'), give precedence to the
+  * the character which is lowercase. If both [c1] and [c2] are equal and the
+diff --git a/core/src/test/kotlin/com/bitwarden/core/data/repository/util/SpecialCharWithPrecedenceComparatorTest.kt b/core/src/test/kotlin/com/bitwarden/core/data/repository/util/SpecialCharWithPrecedenceComparatorTest.kt
+index 0029393..fedb501 100644
+--- a/core/src/test/kotlin/com/bitwarden/core/data/repository/util/SpecialCharWithPrecedenceComparatorTest.kt
++++ b/core/src/test/kotlin/com/bitwarden/core/data/repository/util/SpecialCharWithPrecedenceComparatorTest.kt
+@@ -2,6 +2,7 @@ package com.bitwarden.core.data.repository.util
+ 
+ import org.junit.jupiter.api.AfterEach
+ import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.Assertions.assertTrue
+ import org.junit.jupiter.api.BeforeEach
+ import org.junit.jupiter.api.Test
+ import java.util.Locale
+@@ -74,4 +75,13 @@ class SpecialCharWithPrecedenceComparatorTest {
+             )
+         }
+     }
++
++    @Test
++    fun `Letters that are equal ignoring case sort in the same place`() {
++        // 'İ' (U+0130) and 'I' are the same letter ignoring case, as are the Kelvin sign (U+212A) and 'K'.
++        assertTrue(SpecialCharWithPrecedenceComparator.compare("İa", "Ib") < 0)
++        assertTrue(SpecialCharWithPrecedenceComparator.compare("Ib", "J") < 0)
++        assertTrue(SpecialCharWithPrecedenceComparator.compare("İa", "J") < 0)
++        assertTrue(SpecialCharWithPrecedenceComparator.compare("\u212Aa", "L") < 0)
++    }
+ }
+-- 
+2.43.0
+

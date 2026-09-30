@@ -1,0 +1,5 @@
+MODULE sc
+C1 osm/BuildingHeightUtils.kt:4,14 toFloat() throws on "12 m". High.
+C2 data/elementfilter/ElementFilterExpression.kt:~97 Not -> child's mayEvaluateToTrueWithNoTags; "nodes with !(shop or craft)" doesn't match untagged node. Medium (latent).
+C3 osm/ResurveyUtils.kt:~48 updateWithCheckDate adds check_date:key when only element check_date existed. Low-medium.
+C4 osm/Feature.kt:56 isChildOf plain prefix: shop/car_parts isChildOf shop/car true. Low.

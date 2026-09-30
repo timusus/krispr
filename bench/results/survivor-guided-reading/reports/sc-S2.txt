@@ -1,0 +1,5 @@
+MODULE sc
+C1 util/math/SphericalEarthMath.kt:416-420 isInPolygon miscounts at top/bottom vertex or flat edge; square p(-5,1) and rhombus p(-2,-1) return true. High. (says found by reading)
+C2 osm/BuildingHeightUtils.kt:4,14 toFloat throws on "12 m". High.
+C3 osm/WaysCrossingUtils.kt:107-126 closing node of closed way: crossing missed. Test AddCrossingTest. Medium.
+C4 SphericalEarthMath.kt:211-214 intersectsWith ignores crossing when segment touches other's endpoint: h=[(-1,0),(1,0)], v=[(0,-1),(0,1),(1,0)] false. Low.

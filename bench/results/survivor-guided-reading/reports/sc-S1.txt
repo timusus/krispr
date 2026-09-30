@@ -1,0 +1,6 @@
+MODULE sc
+C1 osm/street_parking/StreetParkingCreator.kt:63-70 painted-area-only -> staggered on street leaves markings=yes; parses back as PAINTED_AREA_ONLY. High.
+C2 SphericalEarthMath.kt:397-424 isInPolygon vertex counting; rhombus from west vertex p(-2,0), p(-2,-1). High.
+C3 WaysCrossingUtils.kt:107-113 closing node of closed barrier not detected. Medium-high.
+C4 SphericalEarthMath.kt:540-578 isCompletelyInside with 180th-meridian box uses any. High (rare).
+C5 data/elementfilter/ElementFiltersParser.kt:340-345 "check_date < today and foo" throws ParseException. Medium.

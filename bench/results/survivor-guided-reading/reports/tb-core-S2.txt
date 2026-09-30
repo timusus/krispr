@@ -1,0 +1,4 @@
+MODULE tb-core
+C1 core/common/.../net/HostNameUtils.kt:119-138 isLegalIPv6Address accepts "1:2:3:4::5:6:7:8" (8 groups plus ::). Test: HostNameUtilsTest isNull. High.
+C2 collections/PriorityQueue.kt:113-141 iterator remove skips sifted element; removeAll(11,3) leaves 3; double remove. Medium.
+C3 state/debug/StateDiffer.kt:213-225 requireNotNull crash on null list items. Low-medium. (mentions same-size list diff)

@@ -1,0 +1,6 @@
+MODULE tb-mail
+C1 MessageIdParser.kt:75-87 readDotAtom rejects "<1405355432.2345.9.camel@localhost>". High.
+C2 MimeParameterDecoder.kt:192-196 continuation section bad percent throws: decode("attachment; filename*0*=UTF-8''report; filename*1*=%ZZ.pdf"). High.
+C3 Utf8.kt:100 U+10000 encoded as F0 80 80. Test round trip via MimeParameterEncoder/Decoder. High (rare input).
+C4 filter/PeekableInputStream.kt:40-70 skip(2) after peek returns 1; read(ByteArray) after peek at EOF returns 1 not -1. Low.
+(mentioned, not ranked: Address.pack/unpack quote escaping)

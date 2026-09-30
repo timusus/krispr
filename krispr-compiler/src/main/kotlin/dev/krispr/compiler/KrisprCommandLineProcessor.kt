@@ -13,8 +13,6 @@ object KrisprConfigurationKeys {
     val EXCLUDE_DIRS: CompilerConfigurationKey<List<String>> = CompilerConfigurationKey.create("krispr excluded source directories")
     val MUTATE_ARID: CompilerConfigurationKey<Set<AridCategory>> = CompilerConfigurationKey.create("krispr arid code to mutate anyway")
     val OPERATORS: CompilerConfigurationKey<List<String>> = CompilerConfigurationKey.create("krispr operators")
-    val EXTREME: CompilerConfigurationKey<Boolean> = CompilerConfigurationKey.create("krispr extreme mode")
-    val PROBE: CompilerConfigurationKey<Boolean> = CompilerConfigurationKey.create("krispr value probes")
 }
 
 class KrisprCommandLineProcessor : CommandLineProcessor {
@@ -49,22 +47,10 @@ class KrisprCommandLineProcessor : CommandLineProcessor {
         ),
         CliOption(
             optionName = OPTION_OPERATOR,
-            valueDescription = "DEFAULTS|" + Operator.entries.filter { it != Operator.REMOVE_BODY }.joinToString("|") { it.name },
+            valueDescription = "DEFAULTS|" + Operator.entries.joinToString("|") { it.name },
             description = "Apply this operator (DEFAULTS: the default set); unset applies the default set",
             required = false,
             allowMultipleOccurrences = true,
-        ),
-        CliOption(
-            optionName = OPTION_MODE,
-            valueDescription = "default|extreme",
-            description = "extreme: one mutant per function, which returns a default value in place of the whole body",
-            required = false,
-        ),
-        CliOption(
-            optionName = OPTION_PROBE,
-            valueDescription = "true|false",
-            description = "Emit a value probe at every mutation site, for showChanges (Mutants.isProbed/observe)",
-            required = false,
         ),
     )
 
@@ -85,17 +71,10 @@ class KrisprCommandLineProcessor : CommandLineProcessor {
             OPTION_OPERATOR -> {
                 Operator.select(listOf(value)) ?: throw CliOptionProcessingException(
                     "Unknown krispr $OPTION_OPERATOR value '$value'; expected DEFAULTS or one of " +
-                        Operator.entries.filter { it != Operator.REMOVE_BODY }.joinToString { it.name },
+                        Operator.entries.joinToString { it.name },
                 )
                 configuration.put(KrisprConfigurationKeys.OPERATORS, configuration.get(KrisprConfigurationKeys.OPERATORS).orEmpty() + value)
             }
-            OPTION_MODE -> when (value) {
-                "default" -> configuration.put(KrisprConfigurationKeys.EXTREME, false)
-                "extreme" -> configuration.put(KrisprConfigurationKeys.EXTREME, true)
-                else -> throw CliOptionProcessingException("Unknown krispr $OPTION_MODE '$value'; expected default or extreme")
-            }
-            OPTION_PROBE -> configuration.put(KrisprConfigurationKeys.PROBE, value.toBooleanStrictOrNull()
-                ?: throw CliOptionProcessingException("Unknown krispr $OPTION_PROBE '$value'; expected true or false"))
             else -> throw CliOptionProcessingException("Unknown krispr option: ${option.optionName}")
         }
     }
@@ -107,7 +86,5 @@ class KrisprCommandLineProcessor : CommandLineProcessor {
         const val OPTION_EXCLUDE_DIR = "excludeDir"
         const val OPTION_MUTATE = "mutate"
         const val OPTION_OPERATOR = "operator"
-        const val OPTION_MODE = "mode"
-        const val OPTION_PROBE = "probe"
     }
 }

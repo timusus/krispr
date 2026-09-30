@@ -52,7 +52,6 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
         // timeoutMinimumMillis has no convention: unset, the run task picks Timeouts.defaultMinimum.
         extension.threads.convention(0)
         extension.maxConcurrentJvms.convention(0)
-        extension.forkJvmTuning.convention(KrisprForkTask.TUNING_AUTO)
         extension.androidVariant.convention("debug")
 
         val instrumenting = isInstrumenting(target)
@@ -121,7 +120,13 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
     }
 
     /** The compilation krispr instruments, and the task whose tests it runs. */
-    private class Selected(val target: KotlinTarget, val compilationName: String, val testTask: () -> Test)
+    private class Selected(
+        val target: KotlinTarget,
+        val compilationName: String,
+        val testTask: () -> Test,
+        /** The configuration the test task's external libraries come from, where krispr can tell. */
+        val testRuntimeClasspath: () -> String? = { null },
+    )
 
     private class State(val project: Project, val extension: KrisprExtension, val buildDir: File) {
         var android: AndroidUnitTests? = null
@@ -171,14 +176,24 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
         private fun isAndroid(target: KotlinTarget): Boolean =
             target.platformType == KotlinPlatformType.androidJvm || android?.let { AndroidUnitTests.isAndroidTarget(target) } == true
 
-        private fun jvm(target: KotlinTarget, testTaskName: String) = Selected(target, KotlinCompilation.MAIN_COMPILATION_NAME) {
-            val path = extension.testProject.orNull ?: return@Selected project.tasks.getByName(testTaskName) as Test
+        private fun jvm(target: KotlinTarget, testTaskName: String) = Selected(
+            target,
+            KotlinCompilation.MAIN_COMPILATION_NAME,
+            testTask = { jvmTestTask(testTaskName) },
+            testRuntimeClasspath = {
+                if (extension.testProject.isPresent) null
+                else target.compilations.findByName(KotlinCompilation.TEST_COMPILATION_NAME)?.runtimeDependencyConfigurationName
+            },
+        )
+
+        private fun jvmTestTask(testTaskName: String): Test {
+            val path = extension.testProject.orNull ?: return project.tasks.getByName(testTaskName) as Test
             val other = project.project(path)
             val taskName = other.extensions.findByType(KotlinMultiplatformExtension::class.java)
                 ?.targets?.singleOrNull { it.platformType == KotlinPlatformType.jvm }?.let { "${it.name}Test" }
                 ?: other.extensions.findByType(KotlinJvmProjectExtension::class.java)?.let { "test" }
                 ?: throw GradleException("krispr: testProject $path has no single Kotlin JVM target")
-            other.tasks.getByName(taskName) as Test
+            return other.tasks.getByName(taskName) as Test
         }
 
         /**
@@ -190,11 +205,14 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
             if (extension.testProject.isPresent) throw GradleException("krispr: testProject is not supported for Android targets")
             return if (target is KotlinAndroidTarget) {
                 val variant = extension.androidVariant.get()
-                Selected(target, variant) { android.testTask(project, variant) }
+                Selected(target, variant, { android.testTask(project, variant) }, { "${variant}UnitTestRuntimeClasspath" })
             } else {
-                Selected(target, KotlinCompilation.MAIN_COMPILATION_NAME) {
-                    android.testTask(project, android.onlyVariant() ?: extension.androidVariant.get())
-                }
+                Selected(
+                    target,
+                    KotlinCompilation.MAIN_COMPILATION_NAME,
+                    { android.testTask(project, android.onlyVariant() ?: extension.androidVariant.get()) },
+                    { target.compilations.firstOrNull { it.name.contains("test", ignoreCase = true) }?.runtimeDependencyConfigurationName },
+                )
             }
         }
 
@@ -214,10 +232,11 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
 
             // The forks always run on the JUnit Platform. A JUnit 4 test task has neither the launcher nor an
             // engine on its classpath, so bring the Vintage engine and let it run the project's own junit jar.
+            // A JUnit Platform task may lack only the launcher.
             val platform = project.configurations.create("krisprJUnitPlatform") { configuration ->
                 configuration.isCanBeConsumed = false
                 configuration.isCanBeResolved = true
-                configuration.description = "JUnit Platform launcher and Vintage engine for krispr runs of JUnit 4 tests."
+                configuration.description = "JUnit Platform launcher, and Vintage engine for JUnit 4 tests, for krispr runs."
                 configuration.exclude(mapOf("group" to "junit", "module" to "junit"))
                 configuration.exclude(mapOf("group" to "org.hamcrest"))
                 configuration.withDependencies { dependencies ->
@@ -226,7 +245,19 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
                             dependencies.add(project.dependencies.create("org.junit.platform:junit-platform-launcher:$VINTAGE_PLATFORM_VERSION"))
                             dependencies.add(project.dependencies.create("org.junit.vintage:junit-vintage-engine:$VINTAGE_ENGINE_VERSION"))
                         }
-                        is JUnitPlatformOptions -> Unit
+                        // Gradle before 9 supplies the launcher to its own test task, so builds often don't declare it.
+                        // Only the resolved modules are read: the classpath's files include outputs of tasks
+                        // that have not run yet (AGP's class transforms).
+                        is JUnitPlatformOptions -> selected.testRuntimeClasspath()
+                            ?.let { project.configurations.findByName(it) }
+                            ?.let { configuration ->
+                                missingLauncherVersion(
+                                    configuration.incoming.resolutionResult.allComponents.mapNotNull { component ->
+                                        component.moduleVersion?.let { "${it.group}:${it.name}" to it.version }
+                                    },
+                                )
+                            }
+                            ?.let { dependencies.add(project.dependencies.create("org.junit.platform:junit-platform-launcher:$it")) }
                         else -> throw GradleException("krispr: ${testTask.get().path} uses ${options.javaClass.simpleName}; only JUnit 4 and the JUnit Platform are supported")
                     }
                 }
@@ -246,13 +277,11 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
             val jvmSlots = project.gradle.sharedServices.registerIfAbsent(JvmSlots.NAME, JvmSlots::class.java) {}
             val maxConcurrentJvms = project.providers.gradleProperty("krispr.maxConcurrentJvms").map { it.trim().toInt() }
                 .orElse(extension.maxConcurrentJvms).orElse(0)
-            val forkJvmTuning = project.providers.gradleProperty("krispr.forkJvmTuning").orElse(extension.forkJvmTuning)
 
             fun KrisprForkTask.inheritTestTask() {
                 this.jvmSlots.set(jvmSlots)
                 usesService(jvmSlots)
                 this.maxConcurrentJvms.set(maxConcurrentJvms)
-                this.forkJvmTuning.set(forkJvmTuning)
                 this.testClasspath.from(testClasspath)
                 this.testClassesDirs.from(testClassesDirs)
                 javaLauncher.set(testTask.flatMap { it.javaLauncher })
@@ -281,6 +310,9 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
                 task.excludeClasses.set(testTask.map(::classExcludes))
             }
 
+            val recordTasks = project.gradle.sharedServices.registerIfAbsent(RecordTasks.NAME, RecordTasks::class.java) {}
+            recordTasks.get().paths += taskPath(project.path, "krisprRecord")
+
             val reportJson = krisprDir.file("report.json")
             val report = project.tasks.register("krisprReport", KrisprReportTask::class.java) { task ->
                 task.group = "verification"
@@ -290,8 +322,6 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
                 task.html.set(krisprDir.file("html/index.html"))
                 task.prSummary.set(krisprDir.file("pr-summary.md"))
                 task.sarif.set(krisprDir.file("krispr.sarif"))
-                task.diffMarkdown.set(krisprDir.file("diff.md"))
-                task.diffAnnotations.set(krisprDir.file("diff-annotations.json"))
             }
 
             project.tasks.register("krisprRun", KrisprRunTask::class.java) { task ->
@@ -302,7 +332,7 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
                 // for a JVM slot holds a Gradle worker, and Gradle has no public way to hand it back while it
                 // waits (a Worker API work item holds one too), so without this, krisprRun tasks queued for
                 // slots could fill every Gradle worker while other modules still had to compile and record.
-                task.mustRunAfter(project.rootProject.allprojects.map { it.tasks.withType(KrisprRecordTask::class.java) })
+                task.mustRunAfter(Callable { recordTasks.get().paths.toList() })
                 task.inheritTestTask()
                 task.manifest.set(krisprDir.file(MANIFEST_NAME))
                 task.instrumented.set(instrumenting)
@@ -314,8 +344,6 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
                 task.projectDirectory.set(project.layout.projectDirectory)
                 task.report.set(reportJson)
                 task.logsDirectory.set(krisprDir.dir("logs"))
-                task.mode.set(modeOf(project, extension))
-                task.showChanges.set(showChangesOf(project, extension))
                 task.historyFile.set(extension.historyFile.orElse(krisprDir.file("history.json")))
                 task.useHistory.set(project.providers.gradleProperty("krispr.history").map { it.toBoolean() }.orElse(extension.useHistory).orElse(true))
                 task.finalizedBy(report)
@@ -401,6 +429,17 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
          * `pkg/Class.class`), as class-name regexes. An include naming a method selects its whole class,
          * since recording by method would need a post-discovery filter; an exclude naming a method is ignored.
          */
+        /**
+         * The JUnit Platform version to add a launcher for, given the test runtime's resolved modules as
+         * ("group:name", version): that of the Platform engine, or null when there is a launcher already or
+         * no Platform engine at all.
+         */
+        internal fun missingLauncherVersion(modules: Iterable<Pair<String, String>>): String? {
+            val versions = modules.toMap()
+            if ("org.junit.platform:junit-platform-launcher" in versions) return null
+            return versions["org.junit.platform:junit-platform-engine"]
+        }
+
         internal fun classIncludes(task: Test): List<String> =
             task.filter.includePatterns.flatMap { listOf(testPatternRegex(it), testPatternRegex(it.substringBeforeLast('.'))) }.distinct() +
                 task.includes.map(::filePatternRegex)
@@ -512,13 +551,10 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
 
         private fun taskPath(projectPath: String, taskName: String) = if (projectPath == ":") ":$taskName" else "$projectPath:$taskName"
 
-        /** Task options of krispr's tasks that take a value, which is not a task name. */
-        private val VALUE_OPTIONS = setOf("--since")
-
         /** (project path or null when unqualified, task name) for each requested task. */
         private fun requestedTasks(project: Project): List<Pair<String?, String>> {
             val arguments = project.gradle.startParameter.taskNames
-            return arguments.filterIndexed { i, it -> !it.startsWith("-") && arguments.getOrNull(i - 1) !in VALUE_OPTIONS }.map { request ->
+            return arguments.filter { !it.startsWith("-") }.map { request ->
                 val name = request.substringAfterLast(':')
                 val prefix = request.substringBeforeLast(':', missingDelimiterValue = "")
                 val path = when {

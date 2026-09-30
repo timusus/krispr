@@ -1,0 +1,89 @@
+diff --git a/core/common/src/commonTest/kotlin/net/thunderbird/core/common/state/StateMachineTest.kt b/core/common/src/commonTest/kotlin/net/thunderbird/core/common/state/StateMachineTest.kt
+index c588a42..1885041 100644
+--- a/core/common/src/commonTest/kotlin/net/thunderbird/core/common/state/StateMachineTest.kt
++++ b/core/common/src/commonTest/kotlin/net/thunderbird/core/common/state/StateMachineTest.kt
+@@ -58,6 +58,23 @@ class StateMachineTest {
+         assertThat(onEntryCalled).isTrue()
+     }
+ 
++    @Test
++    fun `T6 the initial state's delayed onEnter is not given a later state`() = runTest {
++        var entered: Any? = State.Init
++        val stateMachine = stateMachine<State, Event>(scope = this) {
++            initialState(State.Init) {
++                onEnter { _, newState -> entered = newState }
++                transition<Event.LoadData> { _, _ -> State.Loading }
++            }
++            finalState<State.Loading>()
++        }
++
++        stateMachine.process(Event.LoadData)
++        advanceTimeBy(1000.milliseconds)
++
++        assertThat(entered).isEqualTo(State.Init)
++    }
++
+     @Test
+     fun `process should return the new state when transition is defined and guard passes`() = runTest {
+         // Arrange
+diff --git a/core/common/src/commonTest/kotlin/net/thunderbird/core/common/state/debug/CommonStatePrettyPrinterTest.kt b/core/common/src/commonTest/kotlin/net/thunderbird/core/common/state/debug/CommonStatePrettyPrinterTest.kt
+index 3b19b5c..05010d3 100644
+--- a/core/common/src/commonTest/kotlin/net/thunderbird/core/common/state/debug/CommonStatePrettyPrinterTest.kt
++++ b/core/common/src/commonTest/kotlin/net/thunderbird/core/common/state/debug/CommonStatePrettyPrinterTest.kt
+@@ -1046,6 +1046,48 @@ class CommonStatePrettyPrinterTest {
+     )
+ 
+     // endregion
++
++    // region study candidates: a failure means the candidate's claim holds on main
++
++    private fun printOne(previous: TestState, new: TestState, event: TestEvent): String {
++        val testSubject = createTestSubject(logger = logger)
++        val historyStack = ArrayDeque<StateMachine.StateTransitionRecord<TestState, TestEvent>>()
++        historyStack.addLast(createRecord(previousState = previous, newState = new, event = event))
++        testSubject.prettyPrint(historyStack)
++        return logger.events[0].message
++    }
++
++    @Test
++    fun `T3 a list that changes but keeps its size is reported`() {
++        val output = printOne(
++            TestState.WithCollection(items = listOf("a", "b")),
++            TestState.WithCollection(items = listOf("a", "c")),
++            TestEvent.UpdateItems(listOf("a", "c")),
++        )
++        assertThat(output).contains("b -> c")
++    }
++
++    @Test
++    fun `T4 map entries are compared by key`() {
++        val output = printOne(
++            TestState.WithMap(config = mapOf("theme" to "light", "lang" to "en")),
++            TestState.WithMap(config = mapOf("lang" to "en")),
++            TestEvent.UpdateConfig(mapOf("lang" to "en")),
++        )
++        assertThat(output).contains("[theme]: light -> null")
++    }
++
++    @Test
++    fun `T5 a list holding null that changes size is printed`() {
++        val output = printOne(
++            TestState.WithNullable(items = listOf(null)),
++            TestState.WithNullable(items = listOf(null, "x")),
++            TestEvent.Start,
++        )
++        assertThat(output).contains("[1]: null -> x")
++    }
++
++    // endregion
+ }
+ 
+ private sealed interface TestState {
+@@ -1055,6 +1097,7 @@ private sealed interface TestState {
+     data class WithCollection(val items: List<String>) : TestState
+     data class WithMap(val config: Map<String, String>) : TestState
+     data class WithNested(val nested: NestedData) : TestState
++    data class WithNullable(val items: List<String?>) : TestState
+ }
+ 
+ private data class NestedData(

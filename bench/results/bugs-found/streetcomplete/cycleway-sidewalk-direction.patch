@@ -1,0 +1,94 @@
+From 8d42e564b7b3257c3038124379f0796fa0051ab7 Mon Sep 17 00:00:00 2001
+From: Krispr bench <bench@krispr.dev>
+Date: Wed, 30 Sep 2026 05:09:27 +0000
+Subject: [PATCH] Tag the direction of cycling on the sidewalk on the sidewalk
+ key
+
+---
+ .../osm/cycleway/CyclewayCreator.kt           | 16 +++++------
+ .../osm/cycleway/CyclewayCreatorKtTest.kt     | 27 +++++++++++++++++++
+ 2 files changed, 35 insertions(+), 8 deletions(-)
+
+diff --git a/app/src/commonMain/kotlin/de/westnordost/streetcomplete/osm/cycleway/CyclewayCreator.kt b/app/src/commonMain/kotlin/de/westnordost/streetcomplete/osm/cycleway/CyclewayCreator.kt
+index 7772d6c..5ef0708 100644
+--- a/app/src/commonMain/kotlin/de/westnordost/streetcomplete/osm/cycleway/CyclewayCreator.kt
++++ b/app/src/commonMain/kotlin/de/westnordost/streetcomplete/osm/cycleway/CyclewayCreator.kt
+@@ -171,9 +171,12 @@ private fun CyclewayAndDirection.applyTo(tags: Tags, isRight: Boolean, isLeftHan
+     }
+ 
+     val isPhysicalCycleway = cycleway != NONE && cycleway != SEPARATE && cycleway != NONE_NO_ONEWAY
+-    if (!isPhysicalCycleway) {
++    // the direction of cycling on the sidewalk is tagged on the sidewalk, cycleway:<side> is "no"
++    val directionKey = if (cycleway == SIDEWALK_OK) "sidewalk:$side:oneway:bicycle" else "$cyclewayKey:oneway"
++    if (!isPhysicalCycleway || cycleway == SIDEWALK_OK) {
+         tags.remove("$cyclewayKey:oneway")
+-    } else {
++    }
++    if (isPhysicalCycleway) {
+         /* explicitly tag cycleway direction when either
+            - the selected direction is not the one assumed by default when the key is missing
+            - or the road is a oneway and the cycleway is on the contra-flow side
+@@ -183,12 +186,8 @@ private fun CyclewayAndDirection.applyTo(tags: Tags, isRight: Boolean, isLeftHan
+         val isDefaultDirection = defaultDirection == direction
+         val roadDirection = Direction.from(tags)
+         val isInContraflowOfOneway = roadDirection.isReverseOf(direction)
+-        if (!isDefaultDirection || isInContraflowOfOneway || tags.containsKey("$cyclewayKey:oneway")) {
+-            if (cycleway == SIDEWALK_OK) {
+-                tags["sidewalk:$side:oneway:bicycle"] = direction.onewayValue
+-            } else {
+-                tags["$cyclewayKey:oneway"] = direction.onewayValue
+-            }
++        if (!isDefaultDirection || isInContraflowOfOneway || tags.containsKey(directionKey)) {
++            tags[directionKey] = direction.onewayValue
+         }
+     }
+ 
+@@ -206,6 +205,7 @@ private fun CyclewayAndDirection.applyTo(tags: Tags, isRight: Boolean, isLeftHan
+     if (cycleway != SIDEWALK_OK && tags["sidewalk:$side:bicycle"] == "yes" && tags["sidewalk:$side:bicycle:signed"] == "yes") {
+         tags.remove("sidewalk:$side:bicycle")
+         tags.remove("sidewalk:$side:bicycle:signed")
++        tags.remove("sidewalk:$side:oneway:bicycle")
+     }
+     if (direction != BOTH && tags["sidewalk:$side:oneway:bicycle"] == "no") {
+         tags.remove("sidewalk:$side:oneway:bicycle")
+diff --git a/app/src/commonTest/kotlin/de/westnordost/streetcomplete/osm/cycleway/CyclewayCreatorKtTest.kt b/app/src/commonTest/kotlin/de/westnordost/streetcomplete/osm/cycleway/CyclewayCreatorKtTest.kt
+index 147d3e8..5f3dd81 100644
+--- a/app/src/commonTest/kotlin/de/westnordost/streetcomplete/osm/cycleway/CyclewayCreatorKtTest.kt
++++ b/app/src/commonTest/kotlin/de/westnordost/streetcomplete/osm/cycleway/CyclewayCreatorKtTest.kt
+@@ -216,6 +216,33 @@ class CyclewayCreatorKtTest {
+         assertEquals(NONE, result?.right?.cycleway)
+     }
+ 
++    @Test fun `reverse the direction of SIDEWALK_OK back to the default`() {
++        val tags = mapOf(
++            "highway" to "residential",
++            "cycleway:right" to "no",
++            "sidewalk:right:bicycle" to "yes",
++            "sidewalk:right:bicycle:signed" to "yes",
++            "sidewalk:right:oneway:bicycle" to "-1",
++        )
++        assertEquals(BACKWARD, parseCyclewaySides(tags, false)?.right?.direction)
++
++        val result = cycleway(null, SIDEWALK_OK to FORWARD).appliedAndParsed(tags)
++
++        assertEquals(CyclewayAndDirection(SIDEWALK_OK, FORWARD), result?.right)
++    }
++
++    @Test fun `apply SIDEWALK_OK where a two-way track was`() {
++        val tags = mapOf(
++            "highway" to "residential",
++            "cycleway:right" to "track",
++            "cycleway:right:oneway" to "no",
++        )
++
++        val result = cycleway(null, SIDEWALK_OK to FORWARD).appliedAndParsed(tags)
++
++        assertEquals(CyclewayAndDirection(SIDEWALK_OK, FORWARD), result?.right)
++    }
++
+     @Test fun `apply none to a side where sidewalk bicycle designated it set`() {
+         assertEquals(
+             setOf(
+-- 
+2.43.0
+

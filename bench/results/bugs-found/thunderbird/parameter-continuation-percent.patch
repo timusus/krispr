@@ -1,0 +1,50 @@
+From de54e8c85dbd1ee5f70505eafe5c4803ab82338a Mon Sep 17 00:00:00 2001
+From: Krispr bench <bench@krispr.dev>
+Date: Wed, 30 Sep 2026 03:22:35 +0000
+Subject: [PATCH] Keep a parameter continuation with invalid percent encoding
+ instead of throwing
+
+---
+ .../com/fsck/k9/mail/internet/MimeParameterDecoder.kt     | 6 +++++-
+ .../com/fsck/k9/mail/internet/MimeParameterDecoderTest.kt | 8 ++++++++
+ 2 files changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/mail/common/src/main/java/com/fsck/k9/mail/internet/MimeParameterDecoder.kt b/mail/common/src/main/java/com/fsck/k9/mail/internet/MimeParameterDecoder.kt
+index 418a47e..7857aa0 100644
+--- a/mail/common/src/main/java/com/fsck/k9/mail/internet/MimeParameterDecoder.kt
++++ b/mail/common/src/main/java/com/fsck/k9/mail/internet/MimeParameterDecoder.kt
+@@ -191,7 +191,11 @@ object MimeParameterDecoder {
+                 readExtendedParameterValue(parser, parameterName, newParameterName, section, parameterText)
+             } else {
+                 val data = Buffer()
+-                parser.readExtendedParameterValueInto(data)
++                try {
++                    parser.readExtendedParameterValueInto(data)
++                } catch (e: MimeHeaderParserException) {
++                    return null
++                }
+ 
+                 ExtendedValueParameterSection(newParameterName, parameterName, section, data)
+             }
+diff --git a/mail/common/src/test/java/com/fsck/k9/mail/internet/MimeParameterDecoderTest.kt b/mail/common/src/test/java/com/fsck/k9/mail/internet/MimeParameterDecoderTest.kt
+index 8842ab5..becbe8b 100644
+--- a/mail/common/src/test/java/com/fsck/k9/mail/internet/MimeParameterDecoderTest.kt
++++ b/mail/common/src/test/java/com/fsck/k9/mail/internet/MimeParameterDecoderTest.kt
+@@ -336,6 +336,14 @@ class MimeParameterDecoderTest {
+         assertThat(mimeValue.ignoredParameters).isEmpty()
+     }
+ 
++    @Test
++    fun extended_parameter_continuation_with_invalid_percent_encoding() {
++        val mimeValue = MimeParameterDecoder.decode("attachment; filename*0*=utf-8''a; filename*1*=%zz")
++
++        assertThat(mimeValue.parameters).containsOnly("filename" to "a", "filename*1*" to "%zz")
++        assertThat(mimeValue.ignoredParameters).isEmpty()
++    }
++
+     @Test
+     fun section_0_missing() {
+         val mimeValue = MimeParameterDecoder.decode("application/x-stuff; name*1=filename")
+-- 
+2.43.0
+

@@ -74,25 +74,6 @@ object Mutants {
         return true
     }
 
-    /**
-     * The mutant whose site values [Probe] records (`-Dkrispr.probe`), or [NONE]. Only a build compiled
-     * with krispr's `probe` option calls [isProbed]. Writable for in-process tests.
-     */
-    @JvmStatic
-    var probeId: Int = readInt(System.getProperty(Probe.PROBE_PROPERTY))
-
-    /** Whether the site of mutant [id] is being probed; guards [observe], so an unprobed site boxes nothing. */
-    @JvmStatic
-    fun isProbed(id: Int): Boolean = id == probeId
-
-    /** Records a value at the probed site; see [Probe]. */
-    @JvmStatic
-    fun observe(value: Any?) = Probe.observe(value)
-
-    /** Records that the probed site's store was skipped (REMOVE_ASSIGNMENT with the mutant active). */
-    @JvmStatic
-    fun observeSkipped() = Probe.observeSkipped()
-
     /** The primary's [activation], after following its [activeId]; null in the primary itself. */
     private fun findPrimary(): Runnable? {
         val system = ClassLoader.getSystemClassLoader()

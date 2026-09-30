@@ -1,0 +1,81 @@
+From 7a6b518ef3fa50763ce5081b3fac48fac2c7033a Mon Sep 17 00:00:00 2001
+From: Krispr bench <bench@krispr.dev>
+Date: Wed, 30 Sep 2026 03:14:28 +0000
+Subject: [PATCH] Don't download a message the next sync would remove as too
+ old
+
+---
+ .../java/com/fsck/k9/backend/imap/ImapSync.kt | 19 +++++++++++++++++++
+ .../com/fsck/k9/backend/imap/ImapSyncTest.kt  | 19 +++++++++++++++++++
+ 2 files changed, 38 insertions(+)
+
+diff --git a/backend/imap/src/main/java/com/fsck/k9/backend/imap/ImapSync.kt b/backend/imap/src/main/java/com/fsck/k9/backend/imap/ImapSync.kt
+index 877720b..01cdd5f 100644
+--- a/backend/imap/src/main/java/com/fsck/k9/backend/imap/ImapSync.kt
++++ b/backend/imap/src/main/java/com/fsck/k9/backend/imap/ImapSync.kt
+@@ -505,6 +505,25 @@ internal class ImapSync(
+                             return
+                         }
+ 
++                        val earliestPollDate = syncConfig.earliestPollDate
++                        if (earliestPollDate != null && message.sentDate?.before(earliestPollDate) == true) {
++                            // The server's SINCE matched its internal date, but the next sync removes a local message by
++                            // this date. Downloading it would only have it disappear and come back on alternate syncs.
++                            Log.v(
++                                "Newly downloaded message %s:%s:%s is older than the sync window, skipping",
++                                accountName,
++                                folder,
++                                message.uid,
++                            )
++
++                            if (isFirstResponse) {
++                                progress.incrementAndGet()
++                            }
++                            listener.syncProgress(folderServerId = folder, completed = progress.get(), total = todo)
++
++                            return
++                        }
++
+                         if (syncConfig.maximumAutoDownloadMessageSize > 0 &&
+                             message.size > syncConfig.maximumAutoDownloadMessageSize
+                         ) {
+diff --git a/backend/imap/src/test/java/com/fsck/k9/backend/imap/ImapSyncTest.kt b/backend/imap/src/test/java/com/fsck/k9/backend/imap/ImapSyncTest.kt
+index f13029e..1766b47 100644
+--- a/backend/imap/src/test/java/com/fsck/k9/backend/imap/ImapSyncTest.kt
++++ b/backend/imap/src/test/java/com/fsck/k9/backend/imap/ImapSyncTest.kt
+@@ -4,6 +4,7 @@ import app.k9mail.backend.testing.InMemoryBackendStorage
+ import assertk.assertThat
+ import assertk.assertions.containsAtLeast
+ import assertk.assertions.containsExactlyInAnyOrder
++import assertk.assertions.isEqualTo
+ import assertk.assertions.isEmpty
+ import assertk.assertions.isFalse
+ import assertk.assertions.isTrue
+@@ -158,6 +159,24 @@ class ImapSyncTest {
+         assertThat(backendFolder.getMessageServerIds()).containsExactlyInAnyOrder("42")
+     }
+ 
++    @Test
++    fun `sync should not alternate between downloading and removing a message the server returns for earliestPollDate`() =
++        runTest {
++            // The server filters by INTERNALDATE, so it returns a message whose Date header is older than
++            // the cut-off when, for example, another client moved it into the folder recently.
++            addMessageToImapFolder(uid = 23, date = "Mon, 03 Jan 2022 10:00:00 +0100")
++            val syncConfig = defaultSyncConfig.copy(
++                syncRemoteDeletions = true,
++                earliestPollDate = "Tue, 04 Jan 2022 12:00:00 +0100".toDate(),
++            )
++
++            imapSync.sync(FOLDER_SERVER_ID, syncConfig, syncListener)
++            val afterFirstSync = backendFolder.getMessageServerIds()
++            imapSync.sync(FOLDER_SERVER_ID, syncConfig, syncListener)
++
++            assertThat(backendFolder.getMessageServerIds()).isEqualTo(afterFirstSync)
++        }
++
+     @Test
+     fun `sync with new messages on server should download messages`() = runTest {
+         addMessageToImapFolder(uid = 9)
+-- 
+2.43.0
+

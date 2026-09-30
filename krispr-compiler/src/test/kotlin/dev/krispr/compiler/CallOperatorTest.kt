@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test
 
 /**
  * Call removal and null returns (default operators), empty returns and the collection operators
- * (opt-in), and extreme mode: each changes behaviour when switched on, and none lands in arid code.
+ * (opt-in): each changes behaviour when switched on, and none lands in arid code.
  */
 class CallOperatorTest {
     private val collectionOperators = listOf("DEFAULTS", "EMPTY_RETURNS", "REMOVE_CHAIN_CALL", "SWAP_COLLECTION_CALL")
@@ -268,39 +268,5 @@ class CallOperatorTest {
         val compiled = Harness.compile(source, operators = collectionOperators)
         // Only the block under the timeout is ordinary code.
         assertEquals(listOf("return listOf(1) → return emptyList()"), compiled.mutants.map { it.description })
-        val extreme = Harness.compile(source, mode = "extreme")
-        // `click` and `pause` only log, track and wait.
-        assertEquals(listOf("wait"), extreme.mutants.map { it.description.substringBefore(':') }.sorted())
-    }
-
-    @Test
-    fun extremeModeEmptiesWholeBodies() {
-        val compiled = Harness.compile(
-            """
-            class Counter { var count = 0; fun bump() { count++ } }
-            fun bumped(): Int { val c = Counter(); c.bump(); return c.count }
-            fun valid(x: Int): Boolean { if (x > 3) return true; return x == 0 }
-            fun label(x: Int): String? = if (x > 0) "pos" else null
-            fun names(): List<String> = listOf("a")
-            fun ratio(): Double = 2.5
-            fun already(): Boolean = false
-            fun empty() {}
-            fun other(): Pair<Int, Int> = 1 to 2
-            """.trimIndent(),
-            mode = "extreme",
-        )
-        assertTrue(compiled.mutants.all { it.operator == "REMOVE_BODY" }, compiled.mutants.toString())
-        assertEquals(
-            listOf("bump", "bumped", "label", "names", "ratio", "valid"),
-            compiled.mutants.map { it.description.substringBefore(':') }.sorted(),
-        )
-        compiled.assertMutates("bumped", 2, "REMOVE_BODY", emptyList(), 1, 0)
-        compiled.assertMutates("valid", 3, "REMOVE_BODY", listOf(5), true, false)
-        compiled.assertMutates("label", 4, "REMOVE_BODY", listOf(5), "pos", null)
-        compiled.assertMutates("names", 5, "REMOVE_BODY", emptyList(), listOf("a"), emptyList<String>())
-        compiled.assertMutates("ratio", 6, "REMOVE_BODY", emptyList(), 2.5, 0.0)
-        val bump = compiled.mutants.single { it.description.startsWith("bump:") }
-        assertEquals(0, compiled.call("bumped", activeId = bump.id))
-        assertEquals("valid: body → return false", compiled.only("REMOVE_BODY", 3).description)
     }
 }

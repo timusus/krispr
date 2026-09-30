@@ -1,0 +1,60 @@
+From b0e635875dfb44ba9dc2db1c76c976f7cae774ab Mon Sep 17 00:00:00 2001
+From: Krispr bench <bench@krispr.dev>
+Date: Wed, 30 Sep 2026 03:20:59 +0000
+Subject: [PATCH] Accept a one-character part between dots in a message
+ identifier
+
+---
+ .../com/fsck/k9/mail/internet/MessageIdParser.kt | 16 ++++++++++------
+ .../fsck/k9/mail/internet/MessageIdParserTest.kt |  7 +++++++
+ 2 files changed, 17 insertions(+), 6 deletions(-)
+
+diff --git a/mail/common/src/main/java/com/fsck/k9/mail/internet/MessageIdParser.kt b/mail/common/src/main/java/com/fsck/k9/mail/internet/MessageIdParser.kt
+index cefdb81..3e405c4 100644
+--- a/mail/common/src/main/java/com/fsck/k9/mail/internet/MessageIdParser.kt
++++ b/mail/common/src/main/java/com/fsck/k9/mail/internet/MessageIdParser.kt
+@@ -75,13 +75,17 @@ class MessageIdParser private constructor(private val input: String) {
+     private fun readDotAtom(): String {
+         val startIndex = currentIndex
+ 
+-        do {
+-            expect("atext") { it.isAText() }
+-            if (peek() == '.') {
+-                expect('.')
+-                expect("atext") { it.isAText() }
++        expect("atext") { it.isAText() }
++        while (true) {
++            when {
++                peek() == '.' -> {
++                    expect('.')
++                    expect("atext") { it.isAText() }
++                }
++                peek().isAText() -> skip()
++                else -> break
+             }
+-        } while (peek().isAText())
++        }
+ 
+         return input.substring(startIndex, currentIndex)
+     }
+diff --git a/mail/common/src/test/java/com/fsck/k9/mail/internet/MessageIdParserTest.kt b/mail/common/src/test/java/com/fsck/k9/mail/internet/MessageIdParserTest.kt
+index 0d3f868..9436353 100644
+--- a/mail/common/src/test/java/com/fsck/k9/mail/internet/MessageIdParserTest.kt
++++ b/mail/common/src/test/java/com/fsck/k9/mail/internet/MessageIdParserTest.kt
+@@ -13,6 +13,13 @@ class MessageIdParserTest {
+         assertMessageIdValid("<left-side@domain.example>")
+     }
+ 
++    @Test
++    fun `message identifier with a one-character part between dots`() {
++        // git send-email and patman produce identifiers like this one
++        assertMessageIdValid("<20240930031400.1.I4f2a@changeid>")
++        assertMessageIdValid("<left-side@mail.x.example>")
++    }
++
+     @Test
+     fun `message identifier with domain literal`() {
+         assertMessageIdValid("<left-side@[dtext]>")
+-- 
+2.43.0
+

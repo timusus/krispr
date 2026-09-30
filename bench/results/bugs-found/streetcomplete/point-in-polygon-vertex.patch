@@ -1,0 +1,94 @@
+From a23be7706193a747298ef026b5d1ca01971ea511 Mon Sep 17 00:00:00 2001
+From: Krispr bench <bench@krispr.dev>
+Date: Wed, 30 Sep 2026 05:09:26 +0000
+Subject: [PATCH] Count a ray through a polygon corner only where the outline
+ crosses it
+
+---
+ .../util/math/SphericalEarthMath.kt           | 26 ++++++++++++-------
+ .../util/math/SphericalEarthMathTest.kt       | 15 +++++++++++
+ 2 files changed, 31 insertions(+), 10 deletions(-)
+
+diff --git a/app/src/commonMain/kotlin/de/westnordost/streetcomplete/util/math/SphericalEarthMath.kt b/app/src/commonMain/kotlin/de/westnordost/streetcomplete/util/math/SphericalEarthMath.kt
+index 1cfba49..fe97ca5 100644
+--- a/app/src/commonMain/kotlin/de/westnordost/streetcomplete/util/math/SphericalEarthMath.kt
++++ b/app/src/commonMain/kotlin/de/westnordost/streetcomplete/util/math/SphericalEarthMath.kt
+@@ -396,33 +396,39 @@ fun List<LatLon>.centerPointOfPolygon(): LatLon {
+  */
+ fun LatLon.isInPolygon(polygon: List<LatLon>): Boolean {
+     var oddNumberOfIntersections = false
+-    var lastWasIntersectionAtVertex = false
+     val lon = longitude
+     val lat = latitude
+     polygon.asSequenceOfPairs().forEach { (first, second) ->
+         val lat0 = first.latitude
+         val lat1 = second.latitude
+-        // scanline check, disregard line segments parallel to the cast ray
+-        if (lat0 != lat1 && inside(lat, lat0, lat1)) {
+-            val lon0 = first.longitude
+-            val lon1 = second.longitude
++        val lon0 = first.longitude
++        val lon1 = second.longitude
++        if (lat0 == lat1) {
++            // line segment parallel to the cast ray: only check whether position is on it
++            if (lat == lat0 && insideLongitudes(lon, lon0, lon1)) return true
++        } else if (inside(lat, lat0, lat1)) {
+             val vt = (lat - lat1) / (lat0 - lat1)
+             val intersectionLongitude = normalizeLongitude(lon1 + vt * normalizeLongitude(lon0 - lon1))
+             val lonDiff = normalizeLongitude(intersectionLongitude - lon)
+             // position is on polygon boundary
+             if (lonDiff == 0.0) return true
+-            // ray crosses polygon boundary. ignore if this intersection was already counted
+-            // when looking at the last intersection
+-            val isIntersectionAtVertex = lat == lat1
+-            if (lonDiff > 0 && !lastWasIntersectionAtVertex) {
++            // ray crosses polygon boundary. Counting a segment only if exactly one of its ends is
++            // above the ray counts a ray through a vertex once if the polygon continues on the
++            // other side of the ray, and zero or two times if it only touches it
++            if (lonDiff > 0 && (lat0 > lat) != (lat1 > lat)) {
+                 oddNumberOfIntersections = !oddNumberOfIntersections
+             }
+-            lastWasIntersectionAtVertex = isIntersectionAtVertex
+         }
+     }
+     return oddNumberOfIntersections
+ }
+ 
++private fun insideLongitudes(lon: Double, lon0: Double, lon1: Double): Boolean {
++    val length = normalizeLongitude(lon1 - lon0)
++    val offset = normalizeLongitude(lon - lon0)
++    return if (length >= 0) offset in 0.0..length else offset in length..0.0
++}
++
+ private fun inside(v: Double, bound0: Double, bound1: Double): Boolean =
+     if (bound0 < bound1) v in bound0..bound1 else v in bound1..bound0
+ 
+diff --git a/app/src/commonTest/kotlin/de/westnordost/streetcomplete/util/math/SphericalEarthMathTest.kt b/app/src/commonTest/kotlin/de/westnordost/streetcomplete/util/math/SphericalEarthMathTest.kt
+index 6c40dd0..2ab36a8 100644
+--- a/app/src/commonTest/kotlin/de/westnordost/streetcomplete/util/math/SphericalEarthMathTest.kt
++++ b/app/src/commonTest/kotlin/de/westnordost/streetcomplete/util/math/SphericalEarthMathTest.kt
+@@ -741,6 +741,21 @@ class SphericalEarthMathTest {
+         assertFalse(p(0.0, -2.0).isInPolygon(rhombus))
+     }
+ 
++    @Test fun `point outside polygon whose ray intersects a vertex is outside polygon wherever the ring starts`() {
++        val rhombus = p(0.0, 0.0).createRhombus(1.0)
++        for (start in 0 until 4) {
++            val ring = rhombus.subList(start, 4) + rhombus.subList(0, start + 1)
++            assertFalse(p(-2.0, 1.0).isInPolygon(ring))
++            assertFalse(p(-2.0, -1.0).isInPolygon(ring))
++        }
++    }
++
++    @Test fun `point outside polygon level with a horizontal edge is outside polygon`() {
++        val square = listOf(p(0.0, 0.0), p(1.0, 0.0), p(1.0, 1.0), p(0.0, 1.0), p(0.0, 0.0))
++        assertFalse(p(-1.0, 1.0).isInPolygon(square))
++        assertFalse(p(-1.0, 0.0).isInPolygon(square))
++    }
++
+     @Test fun `point outside polygon whose ray intersects a vertex at 180th meridian is outside polygon`() {
+         val rhombus = p(180.0, 0.0).createRhombus(1.0)
+         // four checks here because the ray could be cast in any direction
+-- 
+2.43.0
+

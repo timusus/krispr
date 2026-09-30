@@ -34,23 +34,17 @@ import org.jetbrains.kotlin.name.Name
  * variant's VersionCompat.kt (krispr-compiler/k*), which is compiled against that variant's compiler.
  */
 
-/** [probes] is null unless the build asked for value probes (showChanges). */
-class KrisprSymbols(val mutantsClass: IrClassSymbol, val isActive: IrSimpleFunctionSymbol, val probes: Probes? = null) {
-    /** `Mutants.isProbed(id)`, `Mutants.observe(value)` and `Mutants.observeSkipped()`. */
-    class Probes(val isProbed: IrSimpleFunctionSymbol, val observe: IrSimpleFunctionSymbol, val observeSkipped: IrSimpleFunctionSymbol)
+class KrisprSymbols(val mutantsClass: IrClassSymbol, val isActive: IrSimpleFunctionSymbol) {
 
     companion object {
         private val MUTANTS = ClassId(FqName("dev.krispr.runtime"), Name.identifier("Mutants"))
         private val IS_ACTIVE = CallableId(MUTANTS, Name.identifier("isActive"))
 
-        fun resolve(context: IrPluginContext, file: IrFile, probe: Boolean = false): KrisprSymbols {
+        fun resolve(context: IrPluginContext, file: IrFile): KrisprSymbols {
             val mutantsClass = findClass(context, file, MUTANTS)
                 ?: error("krispr: ${MUTANTS.asFqNameString()} is not on the compile classpath; add krispr-runtime")
             val isActive = findFunctions(context, file, IS_ACTIVE).single()
-            fun function(name: String) = findFunctions(context, file, CallableId(MUTANTS, Name.identifier(name))).singleOrNull()
-                ?: error("krispr: Mutants.$name is missing from krispr-runtime; the runtime is older than the compiler plugin")
-            val probes = if (probe) Probes(function("isProbed"), function("observe"), function("observeSkipped")) else null
-            return KrisprSymbols(mutantsClass, isActive, probes)
+            return KrisprSymbols(mutantsClass, isActive)
         }
     }
 }

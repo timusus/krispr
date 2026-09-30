@@ -1,0 +1,3 @@
+MODULE sc
+C1 osm/BuildingHeightUtils.kt:4,14 tags["height"]?.toFloat() throws on "10 m"; estimateBuildingHeight(height=10 m, building:levels=2) should not throw. High.
+C2 osm/ResurveyUtils.kt:~52 updateWithCheckDate adds check_date:key and bumps check_date when only element-wide check_date existed and value changed. Test: ResurveyUtilsTest changes only key. Low-medium.

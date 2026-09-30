@@ -94,20 +94,20 @@ UNKNOWN is never counted as killed.
 
 ## What code to mutate
 
-Mutate **logic**, not presentation or plumbing. By default Krispr skips "arid" code, where mutants are
-noise or can't be killed. Google's arid heuristics raised the share of useful mutants from 15% to 89%.
+Mutate **logic**, not presentation or plumbing. By default Krispr skips code that isn't worth mutating, where mutants are
+noise or can't be killed. Google's heuristics for such code raised the share of useful mutants from 15% to 89%.
 
 - **Google's categories:** logging, memoization and cache lookups, sleeps, timeouts and delays, and
   metrics or analytics counters. The rules go by names (`getOrPut`, `cache[key] != null`, `delay`,
   `withTimeout`, `analytics.track*`, `metrics.*`, `counter.inc*`) and are conservative; docs/tuning.md lists
-  them. The value a `withTimeout` call returns is arid too (negating it repeats the block's own
+  them. The value a `withTimeout` call returns is skipped too (negating it repeats the block's own
   return-value mutant); the code inside the block is still mutated.
 - **Kotlin compiler-generated code:** data class members, coroutine state machines, null intrinsics,
   default-argument bridges, and similar. Mutating before code generation avoids most of it, which is the
   reason Krispr exists.
 - **Our own rules** (extrapolated, judgment): `@Composable` and `@Preview` bodies, DI declarations
   (Hilt/Dagger/Koin/Metro), `toString`, `equals`/`hashCode`, trivial getters, and `@Generated` code. Every category has an
-  opt-out (`mutateCaches`, `mutateDelays`, `mutateMetrics`, and so on).
+  opt-out (`mutate = listOf("caches", "delays", "metrics")`, and so on).
 - **Project rules:** a trailing `// krispr:ignore` drops the mutants of a line, and a `.krispr-exclude`
   file drops them by file, class, function, operator or line range.
 - **Provably equivalent mutants** (PIT filters the same): `x + 0 → x - 0` on whole numbers
@@ -124,7 +124,8 @@ research shows a few operators achieve about the same score as the full set (Off
 Just et al., STVR'15 on non-redundant ROR). Google ships five. The set:
 
 - relational (ROR): comparison boundaries (`<` becomes `<=`), negated equality (`==` becomes `!=`),
-  and range bounds (`x in a..b` excludes `a`, or `b`)
+  and range bounds (`x in a..b` excludes `a`, or `b`; a `for` loop over `a..b` skips its first element, or
+  its last)
 - logical connector (LCR): `&&` becomes `||`
 - arithmetic (AOR): `+` becomes `-`, `*` becomes `/`, `++` becomes `--`, and PIT's bitwise swaps
   (`and↔or`, `shl↔shr`, `x.inv() → x`)
@@ -136,22 +137,23 @@ Just et al., STVR'15 on non-redundant ROR). Google ships five. The set:
 - return values: Boolean returns negated, Int returns replaced by 0 (or 1), nullable returns replaced
   by `null`
 - elvis: `a ?: b` becomes `a!!`, so the fallback is never used
-- call removal: a Unit-returning call statement that is not arid is removed
+- call removal: a Unit-returning call statement that is not in skipped code is removed, and so is the block of an
+  `also`, `apply`, or a `let` or `run` whose value nothing reads
 - chain call removal: a call that keeps its receiver's type is skipped (`filter`, `sorted`, `take`,
   `distinct`, …), and so is a value-preserving adjustment (`coerceIn`, `abs`, `trim`, a clamping
   `maxOf(0, x)`).
 - argument propagation (PIT's): a same-type text, collection or rounding transform (`removePrefix`,
   `replace`, `substringBefore`, `takeIf`, `xs + x`, `floor`) replaced by its receiver; it survives when
   no test passes an input the transform changes.
+- arguments: a `true`/`false` literal argument flipped (`ignoreCase = true`), a named argument whose
+  parameter has a default left out, and a count passed to `take`, `drop`, `chunked`, `padStart`,
+  `coerceIn` and the like moved by one.
 
 Opt-in, because they add many mutants for few new survivors: empty returns (`""`, `emptyList()`,
 `emptyFlow()`, …) and swapping collection calls (`any↔all`, `first↔last`, `min↔max`). On clikt and
 kotlinpoet they and chain call removal added 459 mutants; of 15 sampled new survivors 9 were real test
-gaps, 6 could not be caught and none was junk.
-
-**Extreme mode** (Descartes, an engine for PIT) makes one mutant per function that removes the whole
-body. It answers a coarser question, "which covered functions could be deleted without a test
-noticing?", so it lists pseudo-tested functions and gives no score.
+gaps, 6 could not be caught and none was junk. Removing preconditions (`require`, `check`), dropping a `copy` argument and routing
+a sealed `when` branch are opt-in as well; see [architecture.md](architecture.md) for the measurement.
 
 ## Cost
 
@@ -165,7 +167,7 @@ default to PIT's `1.25 × time + 4000 ms`.
 ## Form of output
 
 Diff mode (mutate only changed lines, cap the survivors reported per file) is the only form proven at
-industrial scale. It is the intended primary use: `krisprRun --since <ref>` or `diffBase` mutates the lines
+industrial scale. It is the intended primary use: `diffBase` mutates the lines
 changed since the merge base, and the summary prints at most `maxSurvivorsPerFile` (default 3) survivors
 per file, in line order. Whole-module runs are for baselines and exploration.
 

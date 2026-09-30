@@ -108,7 +108,7 @@ testing {
                     systemProperty("krispr.rootDir", rootDir.absolutePath)
                     // Forks are assigned whole test classes, and each test's nested Gradle/AGP build is
                     // already capped at --max-workers=2, so 2 forks fits a --max-workers=4 outer build
-                    // without oversubscribing. Measured (docs/dev-loop.md): warm wall time only drops
+                    // without oversubscribing. Measured: warm wall time only drops
                     // 145s -> 138s, well short of the naive per-class-bin-packing estimate, because each
                     // fork pays its own JVM/Gradle-daemon startup and the nested AGP builds themselves
                     // are the bottleneck, not raw JUnit execution time. Kept anyway: no

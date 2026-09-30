@@ -16,9 +16,7 @@ internal data class ReportSummary(
     val mutationScore: Int?,
     val coveredScore: Int?,
     val counts: Map<MutantStatus, Int>,
-    /** Whether this run recorded every covering test's verdict per mutant, not just the first kill. */
-    val killMatrix: Boolean = false,
-    /** The ref diff mode ran against (`--since`/`diffBase`), or null for a full run. */
+    /** The ref diff mode ran against (`diffBase`), or null for a full run. */
     val diffBase: String? = null,
 )
 
@@ -35,12 +33,6 @@ internal data class MutantReport(
     val millis: Long,
     val runner: String?,
     val reason: String?,
-    /** Every test confirmed to have killed this mutant; see [TestValueAnalysis]. */
-    val killers: List<String> = emptyList(),
-    /** The tests this verdict is real evidence about, whether they killed it or not; see [TestValueAnalysis]. */
-    val testedTests: List<String> = emptyList(),
-    /** What the survivor changed at its site, with `showChanges`; see [Change]. */
-    val change: Change? = null,
 ) {
     /** `description` is always `"<original> → <mutated>"`, written by MutationTransformer.describeSwap et al. */
     val original: String get() = description.substringBefore(" → ")
@@ -67,7 +59,6 @@ internal data class MutantReport(
                 "SAFE_CALL_BODY" -> "the safe-call body is skipped, as if the receiver were null"
                 "NULL_RETURNS" -> "the return value becomes `null`"
                 "EMPTY_RETURNS", "EMPTY_STRING_RETURNS" -> "the return value becomes empty"
-                "REMOVE_BODY" -> "the function body is skipped"
                 else -> if (after.isNotEmpty()) "`$before` became `$after`" else "`$before` changed"
             }
             return when (status) {
@@ -112,14 +103,10 @@ internal data class Report(
     val testTimes: Map<String, Long> = emptyMap(),
 ) {
     val survivors: List<MutantReport> get() = mutants.filter { it.status == MutantStatus.SURVIVED }
-    val testValue: TestValueAnalysis.Result get() = TestValueAnalysis.analyze(this)
 }
 
 internal object ReportReader {
     private const val DEFAULT_MAX_SURVIVORS_PER_FILE = 3
-
-    fun isExtremeMode(file: File): Boolean =
-        ((JsonSlurper().parse(file) as? Map<*, *>)?.get("summary") as? Map<*, *>)?.get("mode") == EXTREME
 
     fun read(file: File): Report {
         @Suppress("UNCHECKED_CAST")
@@ -136,7 +123,6 @@ internal object ReportReader {
             mutationScore = (summaryMap["mutationScore"] as? Number)?.toInt(),
             coveredScore = (summaryMap["coveredScore"] as? Number)?.toInt(),
             counts = counts,
-            killMatrix = summaryMap["killMatrix"] == true,
             diffBase = summaryMap["diffBase"] as? String,
         )
         @Suppress("UNCHECKED_CAST")
@@ -155,9 +141,6 @@ internal object ReportReader {
                 millis = (it["millis"] as? Number)?.toLong() ?: 0L,
                 runner = it["runner"] as String?,
                 reason = it["reason"] as String?,
-                killers = (it["killers"] as? List<String>).orEmpty(),
-                testedTests = (it["testedTests"] as? List<String>).orEmpty(),
-                change = (it["change"] as? Map<*, *>)?.let(Change::fromJson),
             )
         }
         val maxSurvivorsPerFile = ((root["maxSurvivorsPerFile"] ?: summaryMap["maxSurvivorsPerFile"]) as? Number)?.toInt()

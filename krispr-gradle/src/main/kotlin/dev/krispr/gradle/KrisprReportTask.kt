@@ -27,12 +27,6 @@ abstract class KrisprReportTask : DefaultTask() {
     @get:OutputFile abstract val prSummary: RegularFileProperty
     @get:OutputFile abstract val sarif: RegularFileProperty
 
-    /** Written only when the run was diff-scoped (see [ReportSummary.diffBase]); a PR-comment markdown summary. */
-    @get:OutputFile abstract val diffMarkdown: RegularFileProperty
-
-    /** Written only when the run was diff-scoped; GitHub check-run style line annotations. */
-    @get:OutputFile abstract val diffAnnotations: RegularFileProperty
-
     init {
         // Depends only on report.json's content, which krisprRun (never up-to-date, see KrisprRunTask)
         // rewrites on every run; recomputing this from it is cheap, so keep it just as fresh.
@@ -46,22 +40,11 @@ abstract class KrisprReportTask : DefaultTask() {
             logger.lifecycle("krispr: no report.json at $reportFile; krisprReport has nothing to read.")
             return
         }
-        if (ReportReader.isExtremeMode(reportFile)) {
-            logger.lifecycle("krispr: extreme-mode report has no score or survivors; the pseudo-tested list is in $reportFile.")
-            return
-        }
         val parsed = ReportReader.read(reportFile)
         writeFile(html.get().asFile, HtmlReportWriter.write(parsed, projectDirectory.get().asFile))
         writeFile(prSummary.get().asFile, PrSummaryWriter.write(parsed))
         writeFile(sarif.get().asFile, SarifWriter.write(parsed))
-        val extra = if (parsed.summary.diffBase != null) {
-            writeFile(diffMarkdown.get().asFile, DiffReportWriter.writeMarkdown(parsed))
-            writeFile(diffAnnotations.get().asFile, DiffReportWriter.writeAnnotations(parsed))
-            ", ${diffMarkdown.get().asFile} and ${diffAnnotations.get().asFile}"
-        } else {
-            ""
-        }
-        logger.lifecycle("krispr: wrote ${html.get().asFile}, ${prSummary.get().asFile} and ${sarif.get().asFile}$extra")
+        logger.lifecycle("krispr: wrote ${html.get().asFile}, ${prSummary.get().asFile} and ${sarif.get().asFile}")
     }
 
     private fun writeFile(file: File, text: String) {

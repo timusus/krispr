@@ -1,47 +1,48 @@
 # What gets mutated, and how fast
 
-## Arid code
+## Code that isn't worth mutating
 
 Some code has mutants that tests are not expected to kill, or that nobody would write a test to
 kill. Their survivors are noise that hides the useful ones, and each costs a fork. Krispr skips
-these by default. Each category can be turned back on in `krispr { }`:
+these by default. List a category in `mutate` to turn it back on, for example
+`krispr { mutate = listOf("logging", "toString") }`:
 
-- **`mutateComposables`**: `@Composable` functions and every lambda inside them, lambdas passed to
+- **`composables`**: `@Composable` functions and every lambda inside them, lambdas passed to
   `@Composable` function parameters (`setContent { }`), and `@Preview` functions, including
   multipreview annotations. UI is verified by screenshot and UI tests, which Krispr does not run
   per mutant, and a surviving `Modifier.padding(8.dp)` mutant says nothing about the logic. Move the
   logic into plain functions or state holders, where it gets mutants.
-- **`mutateLogging`**: calls to android.util.Log, Timber, SLF4J, kotlin-logging, Log4j, JUL,
+- **`logging`**: calls to android.util.Log, Timber, SLF4J, kotlin-logging, Log4j, JUL,
   Kermit, Napier, `println`/`print`, functions named `log`/`logXxx`, and methods of classes called
   `*Logger` or `Log`, together with their arguments. Tests rarely assert on log output.
-- **`mutateDependencyInjection`**: Dagger and Hilt `@Module` classes, `@Provides`, `@Binds` and
+- **`dependencyInjection`**: Dagger and Hilt `@Module` classes, `@Provides`, `@Binds` and
   multibinding functions, the same for Metro, kotlin-inject and Anvil, and Koin's module DSL
   (`module { single { } }`). This is wiring, which the DI framework validates or which fails on
   first use.
-- **`mutateToString`**: `toString` overrides, which are debug output.
-- **`mutateEqualsHashCode`**: `equals` and `hashCode` overrides. Most are structural (data-class style, or
+- **`toString`**: `toString` overrides, which are debug output.
+- **`equalsHashCode`**: `equals` and `hashCode` overrides. Most are structural (data-class style, or
   delegating to one field) and their mutants read as noise, but for a class whose equality is logic they are
   worth turning on: the comparison with PIT found a real gap in kotlin-result's `Failure.equals`, and a
   kotlinpoet bug fix landed inside `TypeVariableName.equals`/`hashCode` ([evidence.md](evidence.md)).
-- **`mutateTrivialGetters`**: custom getters that only read a field, parameter, constant, object or
+- **`trivialGetters`**: custom getters that only read a field, parameter, constant, object or
   another property (`get() = _state.value` is skipped; `get() = items.size > 10` is not). Their
   mutants just replace the value with a default.
-- **`mutateCaches`**: memoization. The key arguments of `getOrPut` and `computeIfAbsent` (the lambda
+- **`caches`**: memoization. The key arguments of `getOrPut` and `computeIfAbsent` (the lambda
   that computes the value keeps its mutants), and `if` conditions that only look a key up in a cache:
   `cache[key] != null`, `key in cache`, `!cache.containsKey(key)`, `cache.getIfPresent(key)`, on a
   receiver named `*cache*` or `*memo*`, or typed `*Cache*`. A cache that misses recomputes the same
   value, so these mutants are equivalent unless a test counts computations.
-- **`mutateDelays`**: `delay`, `Thread.sleep`, `TimeUnit.sleep`, `SystemClock.sleep` and every
+- **`delays`**: `delay`, `Thread.sleep`, `TimeUnit.sleep`, `SystemClock.sleep` and every
   `withTimeout*` call, with their duration arguments (`delay(attempt * 100L)`). The block passed to
   `withTimeout` keeps its mutants; the value the call returns does not, since negating it repeats the
   block's own return-value mutant. A changed duration only makes a test slower or flakier.
-- **`mutateMetrics`**: analytics and metrics calls with their arguments: `track*` calls on a receiver
+- **`metrics`**: analytics and metrics calls with their arguments: `track*` calls on a receiver
   named or typed `*Analytics*`, any call on a receiver named or typed `*metrics`, and `inc*` calls on a
   receiver named or typed `*counter*` that is not a number (`counter++` on an `Int` keeps its mutant).
 
 The rules go by names, so they are conservative: a lookup of a map called `prices` is ordinary code.
 
-- **`mutateGenerated`**: classes and functions annotated `@Generated`, from any package
+- **`generated`**: classes and functions annotated `@Generated`, from any package
   (`javax.annotation.processing`, `jakarta.annotation`, a code generator's own).
 
 `AridCodeTest` has a test per category.
@@ -92,15 +93,15 @@ The run prints how many mutants the rules excluded; they are left out of the rep
 - **Reused Robolectric sandboxes.** Robolectric caches its sandbox, with `android-all` and the
   project's classes loaded and instrumented in it, for the life of the JVM; building it is ~85% of a
   fresh JVM's time for a Robolectric mutant (about 5 s against 0.7 s of tests, see
-  [perf.md](perf.md)). With `robolectricReuse = "sandbox"` (the default) a worker keeps its
+  [evidence.md](evidence.md#where-an-android-mutants-time-goes)). With `robolectric = "reuse"` (the default) a worker keeps its
   sandbox, and the sandbox's copy of the mutant switch follows the worker's. The sandbox loads the
   project's classes once for all the mutants its worker runs, so a companion, `object`, `lazy` or
   DI-singleton value computed earlier is what later mutants see. When a Robolectric test kills a
   mutant, its worker reruns the failed tests with no mutant active and is kept only if they pass
-  (`robolectricKeepAfterKill`; the summary counts workers kept and retired); a worker that timed
+  (the summary counts workers kept and retired); a worker that timed
   out, left a thread running, ran 100 mutants or filled its heap retires, and mutants in class
   initializers (which a sandbox runs once) get fresh JVMs. A
-  survivor does not retire its worker, so with `confirmSurvivors` (the default) every mutant that
+  survivor does not retire its worker, so every mutant that
   survived a Robolectric test in a reused sandbox runs again in a fresh JVM, and that verdict is the
   one reported; the summary line `N survivors re-checked in fresh JVMs, M changed` counts how often
   the sandbox's verdict was wrong. `"fresh"` gives every mutant a Robolectric test reaches its own JVM
@@ -140,7 +141,7 @@ The run prints how many mutants the rules excluded; they are left out of the rep
   same timeout, and the timeout is worked out again from their time, by the same formula. If they
   still fit, TIMED_OUT stands. If the host has slowed so they no longer fit, the mutant runs once more
   in a fresh JVM with the new timeout, and that verdict counts. If they time out too, the mutant is
-  UNKNOWN ("host too slow"), not killed. See [perf.md](perf.md).
+  UNKNOWN ("host too slow"), not killed.
 - **Out of memory.** A mutant that makes its tests throw `OutOfMemoryError` in a fresh JVM is
   MEMORY_ERROR, counted as killed, as in PIT. In a reused worker the heap may hold earlier mutants'
   leaks, so there it only recycles the worker and reruns the mutant in a fresh JVM.
@@ -164,7 +165,7 @@ krispr {
     maxConcurrentJvms = 0                     // build-wide; 0: half the cores, capped by memory at the tests' -Xmx
     threads = 0                               // this module only; 0: maxConcurrentJvms
     reuseJvms = false                         // one fresh JVM per mutant (or -Pkrispr.reuseJvms=false)
-    robolectricReuse = "fresh"                // Robolectric: a fresh sandbox per mutant; default "sandbox" (or -Pkrispr.robolectricReuse=)
+    robolectric = "fresh"                     // Robolectric: a fresh sandbox per mutant; default "reuse" (or -Pkrispr.robolectric=)
     useScreenshotTests = true                 // let screenshot tests kill mutants
     excludeTests = listOf("*IntegrationTest") // Gradle --tests patterns that may not kill mutants
     quarantinedTests = listOf("*FlakyTest")   // known-flaky tests: never kill, reported as quarantined
@@ -172,13 +173,9 @@ krispr {
     includeSlowTests = true                   // ...unless included, run last,
     slowTestBudgetMs = 10000L                 // up to this much recorded time per mutant
     confirmKills = true                       // rerun every kill in a fresh JVM (or -Pkrispr.confirmKills=true)
-    confirmSurvivors = false                  // Robolectric: trust survivors of a reused sandbox; default true (or -Pkrispr.confirmSurvivors=)
-    robolectricKeepAfterKill = false          // Robolectric: retire a worker after every kill, no health check; default true (or -Pkrispr.robolectricKeepAfterKill=)
-    forkJvmTuning = "off"                     // krispr's JVMs on the tiered JIT; default "auto": C1 only (or -Pkrispr.forkJvmTuning=)
-    diffBase = "origin/main"                  // diff mode by default; --since overrides it
+    diffBase = "origin/main"                  // diff mode by default (or -Pkrispr.diffBase=)
     targetFiles = listOf("src/main/kotlin/a/A.kt") // only these files get mutants (or -Pkrispr.targetFiles=...)
     maxSurvivorsPerFile = 3                   // survivors printed per file; the report has all
-    showChanges = true                        // rerun survivors to show what changed (or -Pkrispr.showChanges=true)
 }
 ```
 

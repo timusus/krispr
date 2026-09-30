@@ -86,7 +86,10 @@ class BitwiseRangeOperatorTest {
         assertMutates("down", mutant("RANGE_BOUNDARY", 10, 1), listOf(10), true, false)
         // `!in` keeps its negation.
         assertMutates("outside", mutant("RANGE_BOUNDARY", 11, 1), listOf('f'), false, true)
-        // Loops over ranges are not `in` checks.
-        assertEquals(emptyList<ManifestEntry>(), compiled.mutants.filter { it.operator == "RANGE_BOUNDARY" && it.line == 12 })
+        // A loop's range gets its own two (see WhenLoopScopeTest).
+        assertEquals(
+            listOf("0 until n → (0 + 1) until n", "0 until n → 0..n"),
+            compiled.mutants.filter { it.operator == "RANGE_BOUNDARY" && it.line == 12 }.map { it.description }.sorted(),
+        )
     }
 }

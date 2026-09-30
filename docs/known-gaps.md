@@ -19,17 +19,16 @@
   per compilation. Verdicts are reused (see [Incremental runs](usage.md#incremental-runs)), but the build and the
   recording run still happen every time.
 - **Equivalent mutants**: only swaps a literal makes equivalent are filtered (`x + 0`, `x * 1`, `x / -1`;
-  see [Arid code](tuning.md#arid-code)). In the validation run, about half of the sampled survivors were
+  see [Code that isn't worth mutating](tuning.md#code-that-isnt-worth-mutating)). In the validation run, about half of the sampled survivors were
   equivalent. Common cases:
   - boundary flips on assignments that give the same value
   - `> 0` → `>= 0` where the value is never 0
   - `&&`/`||` flips hidden by an earlier branch
   - collection-capacity arithmetic
-- **Not mutated**: conditions of a `when` without a subject other than `is` checks (only `if` is negated),
-  ranges iterated by a `for` loop,
+- **Not mutated**: stepped ranges iterated by a `for` loop, collections and `indices` it iterates,
   string templates, and return values other than Boolean, Int, nullable and (opt-in) empty ones. Equality checks in a subject `when` are
   mutated, but their descriptions are poor. Hand-written `equals` and `hashCode` overrides are skipped
-  unless `mutateEqualsHashCode` is set; the comparison with PIT
+  unless `mutate` lists `equalsHashCode`; the comparison with PIT
   ([evidence.md](evidence.md#does-krispr-miss-what-pit-finds)) found a real gap in kotlin-result's
   `Failure.equals`, and a kotlinpoet bug fix inside `TypeVariableName.equals`/`hashCode` had no mutant on its
   lines. turbine's `withTurbineTimeout` returning `null` for a generic `T` is a gap no return-value operator
@@ -43,12 +42,10 @@
   runs. The baseline check catches tests that depend on it, not mutants that disturb it. In a reused
   Robolectric sandbox the project's classes are loaded once for every mutant the worker runs, so a
   `lazy` or `object` value computed while a surviving mutant was active is what later mutants see.
-  Survivors are confirmed in a fresh JVM (`confirmSurvivors`), but a kill that such a value caused is
-  not, unless `confirmKills` is on. Set `robolectricReuse = "fresh"`, or `reuseJvms = false`, if
+  Survivors are confirmed in a fresh JVM, but a kill that such a value caused is
+  not, unless `confirmKills` is on. Set `robolectric = "fresh"`, or `reuseJvms = false`, if
   statuses look wrong.
 - **Screenshot detection is by constant pool.** Only a test class that uses a screenshot library
   directly counts, so a test that captures through its own helper (nowinandroid's `captureMultiTheme`)
   is a killer like any other; add it to `excludeTests`. `useScreenshotTests = true` turns detection
   off. The recording run still runs every test.
-- Configuration cache and isolated projects worked on nowinandroid, which enables both, but no test
-  covers them.

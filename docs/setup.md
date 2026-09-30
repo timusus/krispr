@@ -17,6 +17,12 @@ invocation**. The module can be:
   `testAndroidHostTest`; from `com.android.library` with `androidTarget()` (AGP 8), a variant as above. Common code is covered only through that one JVM-hosted target. Native, JS
   and Wasm tests are out of scope.
 
+When several modules apply it, declare it once in the root build with `id("dev.krispr") apply false`,
+as Gradle recommends for any plugin used by more than one module. The modules then share one copy of the
+plugin, and with it the build-wide limit on test JVMs. Without that, Gradle may load a copy per module,
+and the shared limit fails with a build service type mismatch. Builds with isolated projects work,
+except with `testProject`, which reads the other project directly.
+
 Until the plugin is published, a composite build is the way to get it:
 
 ```kotlin
@@ -33,7 +39,6 @@ krispr {
     timeoutConstantMillis = 4000L  // 1.25 and 4000 are PIT's defaults
     timeoutMinimumMillis = 10000L  // no mutant run times out sooner; default 10000 with Robolectric tests (a fresh JVM's start-up on a busy host), none without
     operators = listOf("DEFAULTS", "SWAP_COLLECTION_CALL") // or -Pkrispr.operators=...; see [PHILOSOPHY.md](PHILOSOPHY.md#operators)
-    mode = "extreme"               // or -Pkrispr.mode=extreme; see Extreme mode
     historyFile = file("ci-cache/krispr-history.json") // default build/krispr/history.json
     useHistory = false             // or -Pkrispr.history=false: run every mutant, keep no history
     maxConcurrentJvms = 4          // krispr JVMs running at once across the whole build (or -Pkrispr.maxConcurrentJvms=4);
@@ -42,22 +47,14 @@ krispr {
     testProject = ":test"          // run another module's JVM tests, when tests live apart from the code
     androidVariant = "demoDebug"   // Android: the variant to mutate and test; default "debug"
     kotlinTarget = "android"       // KMP: which JVM or Android target; default the single JVM target
-    mutateComposables = true       // arid code (see below) is skipped unless turned back on; all default false
-    mutateLogging = true
-    mutateDependencyInjection = true
-    mutateToString = true
-    mutateEqualsHashCode = true
-    mutateTrivialGetters = true
-    mutateCaches = true
-    mutateDelays = true
-    mutateMetrics = true
-    mutateGenerated = true
+    mutate = listOf("toString")    // kinds of code skipped by default to mutate anyway; see tuning.md
 }
 ```
 
 The project must be on Kotlin 2.1.20 up to 2.4.x (see [Kotlin versions](#kotlin-versions)). The test task can
 use JUnit 4 (`useJUnit()`, `kotlin-test-junit`) or the JUnit Platform (Jupiter, Kotest, Vintage).
-For JUnit 4, Krispr brings its own Platform launcher and Vintage engine.
+For JUnit 4, Krispr brings its own Platform launcher and Vintage engine. A JUnit Platform task that doesn't
+declare the launcher, which Gradle before 9 supplies itself, gets the launcher matching its engine.
 
 ## Kotlin Multiplatform
 

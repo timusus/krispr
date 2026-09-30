@@ -1,0 +1,3 @@
+MODULE bw-core
+C1 core/.../util/InstantExtensions.kt:9-15 isOverFiveMinutesOld uses Duration.toMinutes() > 5, so an instant 5:30 old returns false; KDoc says "five or more minutes old", caller AuthRequestExtensions says expired when at least 5 minutes old. Test: InstantExtensionsTest assertTrue(fixedClock.instant().minusSeconds(330).isOverFiveMinutesOld(fixedClock)). Confidence medium.
+C2 core/.../data/serializer/InstantSerializer.kt:13-25 pattern accepts at most 7 fraction digits; "2023-08-01T16:13:03.123456789Z" throws DateTimeParseException; item dropped in SafeListSerializer. Test: InstantSerializerTest decode {"dataAsInstant": "2023-08-01T16:13:03.123456789Z"} == Instant.ofEpochSecond(1690906383, 123456789). Confidence low.

@@ -43,9 +43,9 @@ def run(target, checkout, module, out, commit):
     if not ok or not os.path.exists(report):
         return {"commit": commit, "subject": subject, "outcome": "build or run failed", "seconds": seconds}
     shutil.copy(report, os.path.join(dest, "report.json"))
-    diff_md = os.path.join(checkout, module, "build/krispr/diff.md")
-    if os.path.exists(diff_md):
-        shutil.copy(diff_md, os.path.join(dest, "diff.md"))
+    comment = os.path.join(checkout, module, "build/krispr/pr-summary.md")
+    if os.path.exists(comment):
+        shutil.copy(comment, os.path.join(dest, "pr-summary.md"))
     summary = json.load(open(report))["summary"]
     return {"commit": commit, "subject": subject, "outcome": "ran", "seconds": seconds, "summary": summary}
 

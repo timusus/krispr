@@ -1,0 +1,68 @@
+From 5f1051dffcffc184bd41f51edbc688a4068d397f Mon Sep 17 00:00:00 2001
+From: Krispr bench <bench@krispr.dev>
+Date: Wed, 30 Sep 2026 01:51:52 +0000
+Subject: [PATCH] Label a self-hosted server with an internationalized domain
+ by its host
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+labelOrBaseUrlHost took java.net.URI's host, which is null for a domain URI
+does not accept as a host, such as "https://tresor.müller.de". The environment
+screen accepts such a URL, the app connects to it, and the server name shown on
+the login, unlock and account screens was empty. Two accounts with the same email
+on two such servers also got the same (empty) label, which the landing screen
+uses to match an account. Fall back to the host part of the URI's authority.
+---
+ .../data/repository/util/EnvironmentExtensions.kt    | 12 ++++++++----
+ .../repository/util/EnvironmentExtensionsTest.kt     | 11 +++++++++++
+ 2 files changed, 19 insertions(+), 4 deletions(-)
+
+diff --git a/data/src/main/kotlin/com/bitwarden/data/repository/util/EnvironmentExtensions.kt b/data/src/main/kotlin/com/bitwarden/data/repository/util/EnvironmentExtensions.kt
+index af12567..1d2c2e8 100644
+--- a/data/src/main/kotlin/com/bitwarden/data/repository/util/EnvironmentExtensions.kt
++++ b/data/src/main/kotlin/com/bitwarden/data/repository/util/EnvironmentExtensions.kt
+@@ -137,10 +137,14 @@ val Environment.labelOrBaseUrlHost: String
+         is Environment.SelfHosted -> {
+             // Grab the domain
+             // Ex: "https://www.abc.com/path-1/path-1" -> "www.abc.com"
+-            URI
+-                .create(this.environmentUrlData.selfHostedUrlOrNull.orEmpty())
+-                .host
+-                .orEmpty()
++            val uri = URI.create(this.environmentUrlData.selfHostedUrlOrNull.orEmpty())
++            // URI has no host for a domain it does not accept as one, such as an internationalized
++            // "tresor.müller.de", only an authority: take the host part of that instead.
++            uri.host
++                ?: uri.authority
++                    ?.substringAfterLast('@')
++                    ?.substringBefore(':')
++                    .orEmpty()
+         }
+     }
+ 
+diff --git a/data/src/test/kotlin/com/bitwarden/data/repository/util/EnvironmentExtensionsTest.kt b/data/src/test/kotlin/com/bitwarden/data/repository/util/EnvironmentExtensionsTest.kt
+index e57d2fc..afb4a14 100644
+--- a/data/src/test/kotlin/com/bitwarden/data/repository/util/EnvironmentExtensionsTest.kt
++++ b/data/src/test/kotlin/com/bitwarden/data/repository/util/EnvironmentExtensionsTest.kt
+@@ -264,6 +264,17 @@ class EnvironmentExtensionsTest {
+             environment.labelOrBaseUrlHost,
+         )
+     }
++
++    @Test
++    fun `labelOrBaseUrlHost should return the host of an internationalized self hosted URL`() {
++        val environment = Environment.SelfHosted(
++            environmentUrlData = EnvironmentUrlDataJson(base = "https://tresor.müller.de:8443/bw"),
++        )
++        assertEquals(
++            "tresor.müller.de",
++            environment.labelOrBaseUrlHost,
++        )
++    }
+ }
+ 
+ private val DEFAULT_CUSTOM_ENVIRONMENT_URL_DATA: EnvironmentUrlDataJson = EnvironmentUrlDataJson(
+-- 
+2.43.0
+

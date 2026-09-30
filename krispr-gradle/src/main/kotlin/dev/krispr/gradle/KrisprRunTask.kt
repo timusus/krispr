@@ -17,7 +17,6 @@ import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.TaskAction
 import org.gradle.work.DisableCachingByDefault
-import org.gradle.api.tasks.options.Option
 import java.io.File
 import java.lang.management.ManagementFactory
 import java.time.LocalTime
@@ -35,28 +34,6 @@ import java.util.zip.ZipFile
  * whose tests also time out without the mutant is UNKNOWN instead of TIMED_OUT; see [Timeouts.afterTimeout].
  */
 enum class MutantStatus { KILLED, TIMED_OUT, MEMORY_ERROR, SURVIVED, NO_COVERAGE, NOT_MEASURED, UNKNOWN, RUN_ERROR }
-
-/**
- * The end (exclusive) of the failFast batch that [index] falls into, among [total] tests run in priority
- * order. Mirrors `TestRun.batches` in krispr-runtime, which grows batches 1, 1, 2, 4, 8, … and stops at
- * the first batch with a failure: the whole batch containing a killer ran against the mutant, not just
- * the tests up to the killer's own index. Duplicated rather than shared across the module boundary, like
- * ForkRunner's protocol markers mirror ForkedRunner's: krispr-gradle must not gain a compile dependency
- * on krispr-runtime, which would leak its test-engine classpath into every consumer of the plugin.
- */
-internal fun batchEnd(index: Int, total: Int): Int {
-    var start = 0
-    var size = 1
-    var batchCount = 0
-    while (start < total) {
-        val end = minOf(total, start + size)
-        if (index < end) return end
-        start = end
-        batchCount++
-        if (batchCount > 1) size *= 2
-    }
-    return total
-}
 
 @DisableCachingByDefault(because = "runs every mutant's tests in forked JVMs; verdicts are reused through historyFile instead")
 abstract class KrisprRunTask : KrisprForkTask() {
@@ -84,8 +61,8 @@ abstract class KrisprRunTask : KrisprForkTask() {
     /** See [KrisprExtension.reuseJvms]. */
     @get:Input abstract val reuseJvms: Property<Boolean>
 
-    /** See [KrisprExtension.robolectricReuse]. */
-    @get:Input abstract val robolectricReuse: Property<String>
+    /** See [KrisprExtension.robolectric]. */
+    @get:Input abstract val robolectric: Property<String>
 
     /** See [KrisprExtension.useScreenshotTests]. */
     @get:Input abstract val useScreenshotTests: Property<Boolean>
@@ -99,25 +76,14 @@ abstract class KrisprRunTask : KrisprForkTask() {
     /** See [KrisprExtension.confirmKills]. */
     @get:Input abstract val confirmKills: Property<Boolean>
 
-    /** See [KrisprExtension.confirmSurvivors]. */
-    @get:Input abstract val confirmSurvivors: Property<Boolean>
-
-    /** See [KrisprExtension.robolectricKeepAfterKill]. */
-    @get:Input abstract val robolectricKeepAfterKill: Property<Boolean>
-
-    /** See [KrisprExtension.diffBase]; `--since <ref>` on the command line. */
-    @get:Input @get:Optional
-    @get:Option(option = "since", description = "Mutates only the lines changed since the merge base of this ref and HEAD.")
-    abstract val since: Property<String>
+    /** See [KrisprExtension.diffBase]. */
+    @get:Input @get:Optional abstract val diffBase: Property<String>
 
     /** See [KrisprExtension.diffFailOnSurvivors]. */
     @get:Input abstract val diffFailOnSurvivors: Property<Boolean>
 
     /** See [KrisprExtension.maxSurvivorsPerFile]. */
     @get:Input abstract val maxSurvivorsPerFile: Property<Int>
-
-    /** See [KrisprExtension.killMatrix]. */
-    @get:Input abstract val killMatrix: Property<Boolean>
 
     /** See [KrisprExtension.slowTestThresholdMs]. */
     @get:Input abstract val slowTestThresholdMs: Property<Long>
@@ -127,12 +93,6 @@ abstract class KrisprRunTask : KrisprForkTask() {
 
     /** See [KrisprExtension.slowTestBudgetMs]. */
     @get:Input abstract val slowTestBudgetMs: Property<Long>
-
-    /** See [KrisprExtension.mode]. */
-    @get:Input abstract val mode: Property<String>
-
-    /** See [KrisprExtension.showChanges]. */
-    @get:Input abstract val showChanges: Property<Boolean>
 
     /** See [KrisprExtension.historyFile]; read and written, so not an input or output. */
     @get:Internal abstract val historyFile: RegularFileProperty
@@ -149,11 +109,11 @@ abstract class KrisprRunTask : KrisprForkTask() {
         val extension = project.extensions.getByType(KrisprExtension::class.java)
         // -Pkrispr.reuseJvms=false overrides the build script, to compare the two modes on one build.
         reuseJvms.convention(project.providers.gradleProperty("krispr.reuseJvms").map { it.toBoolean() }.orElse(extension.reuseJvms).orElse(true))
-        robolectricReuse.convention(project.providers.gradleProperty("krispr.robolectricReuse").orElse(extension.robolectricReuse).orElse(SANDBOX))
+        robolectric.convention(project.providers.gradleProperty("krispr.robolectric").orElse(extension.robolectric).orElse(REUSE))
         useScreenshotTests.convention(extension.useScreenshotTests.orElse(false))
         excludeTests.convention(extension.excludeTests.orElse(emptyList()))
         quarantinedTests.convention(extension.quarantinedTests.orElse(emptyList()))
-        since.convention(diffBaseOf(project, extension))
+        diffBase.convention(diffBaseOf(project, extension))
         diffFailOnSurvivors.convention(
             project.providers.gradleProperty("krispr.diffFailOnSurvivors").map { it.toBoolean() }.orElse(extension.diffFailOnSurvivors).orElse(false),
         )
@@ -162,14 +122,6 @@ abstract class KrisprRunTask : KrisprForkTask() {
         includeSlowTests.convention(extension.includeSlowTests.orElse(false))
         slowTestBudgetMs.convention(extension.slowTestBudgetMs.orElse(10_000L))
         confirmKills.convention(project.providers.gradleProperty("krispr.confirmKills").map { it.toBoolean() }.orElse(extension.confirmKills).orElse(false))
-        confirmSurvivors.convention(
-            project.providers.gradleProperty("krispr.confirmSurvivors").map { it.toBoolean() }.orElse(extension.confirmSurvivors).orElse(true),
-        )
-        robolectricKeepAfterKill.convention(
-            project.providers.gradleProperty("krispr.robolectricKeepAfterKill").map { it.toBoolean() }
-                .orElse(extension.robolectricKeepAfterKill).orElse(true),
-        )
-        killMatrix.convention(project.providers.gradleProperty("krispr.killMatrix").map { it.toBoolean() }.orElse(extension.killMatrix).orElse(false))
         buildRootDirectory.fileValue(project.rootDir)
     }
 
@@ -197,18 +149,6 @@ abstract class KrisprRunTask : KrisprForkTask() {
         val reason: String? = null,
         /** The selector of the test that killed it. */
         val killer: String? = null,
-        /**
-         * Display names of every test confirmed to have failed and killed this mutant. Complete only with
-         * [KrisprExtension.killMatrix]; otherwise at most the one test in [killedBy], since a kill stops
-         * the run before the rest of [tests] gets a turn. See [TestValueAnalysis].
-         */
-        val allKillers: List<String> = emptyList(),
-        /**
-         * Display names of the tests this outcome is real evidence about: for SURVIVED, every covering
-         * test really ran and passed; for KILLED without the kill matrix, only the tests up to and
-         * including the killer ran before the run stopped, so the rest say nothing either way.
-         */
-        val testedTests: List<String> = emptyList(),
     )
 
     @TaskAction
@@ -221,7 +161,7 @@ abstract class KrisprRunTask : KrisprForkTask() {
         }
         val started = System.nanoTime()
         val all = excludeByRules(readManifest())
-        val diffRef = since.orNull
+        val diffRef = diffBase.orNull
         val mutants = diffRef?.let { ref ->
             val changed = ChangedLines.since(ref, projectDirectory.get().asFile)
             all.filter { changed.contains(File(it.file), it.line) }.also {
@@ -293,20 +233,19 @@ abstract class KrisprRunTask : KrisprForkTask() {
 
         // Verdicts of the last run whose code and tests did not change; see [History].
         val candidates = HashMap(killers)
-        val extreme = mode.get() == EXTREME
-        val historyFile = historyFile.get().asFile.let { if (extreme) File(it.parentFile, "${it.nameWithoutExtension}-$EXTREME.${it.extension}") else it }
+        val historyFile = historyFile.get().asFile
         val robolectric = usesRobolectric()
         val routing = Routing(robolectric, recorded)
         fun plainOnly(mutant: Mutant) = routing.plainOnly(killers.getValue(mutant.id))
-        val sandboxReuse = when (val value = robolectricReuse.get().trim().lowercase()) {
-            SANDBOX -> true
+        val sandboxReuse = when (val value = this.robolectric.get().trim().lowercase()) {
+            REUSE -> true
             FRESH -> false
-            else -> throw GradleException("krispr: robolectricReuse is '$value'; use '$SANDBOX' or '$FRESH'.")
+            else -> throw GradleException("krispr: robolectric is '$value'; use '$REUSE' or '$FRESH'.")
         }
         val timeoutMinimum = timeoutMinimumMillis.orNull ?: Timeouts.defaultMinimum(robolectric)
         // timeoutControl: TIMED_OUT verdicts from before #42 may be the host's doing, so they are not reused.
         val settings = "$KRISPR_VERSION|${timeoutFactor.get()}|${timeoutConstantMillis.get()}|$timeoutMinimum|${confirmKills.get()}|timeoutControl" +
-            if (!robolectric) "" else if (sandboxReuse) "|robolectricReuse=$SANDBOX|confirmSurvivors=${confirmSurvivors.get()}|keepAfterKill=${robolectricKeepAfterKill.get()}" else "|robolectricReuse=$FRESH"
+            if (!robolectric) "" else if (sandboxReuse) "|robolectricReuse=sandbox|confirmSurvivors=true|keepAfterKill=true" else "|robolectricReuse=$FRESH"
         val history = if (useHistory.get()) History.read(historyFile, settings) else null
         val classHashes = TestClassHashes(testClassesDirs.files)
         fun classHash(selector: String) = classHashes.of(recorded[selector]?.className ?: readableSelector(selector))
@@ -317,14 +256,7 @@ abstract class KrisprRunTask : KrisprForkTask() {
                 if (tests.isEmpty() || outcomes.containsKey(mutant.id)) continue
                 val entry = history.reusable(mutant.id, mutant.hash, tests, ::classHash)
                 if (entry != null) {
-                    // The history keeps only the one killer (killedBy is "OutOfMemoryError", not a test, for
-                    // MEMORY_ERROR); SURVIVED still proves every one of its tests ran and passed.
-                    val killerName = entry.killedBy.takeIf { entry.status == MutantStatus.KILLED }
-                    val evidence = if (entry.status == MutantStatus.SURVIVED) entry.names else listOfNotNull(killerName)
-                    outcomes[mutant.id] = Outcome(
-                        entry.status, entry.names, entry.killedBy, entry.millis, HISTORY, killer = entry.killer,
-                        allKillers = listOfNotNull(killerName), testedTests = evidence,
-                    )
+                    outcomes[mutant.id] = Outcome(entry.status, entry.names, entry.killedBy, entry.millis, HISTORY, killer = entry.killer)
                     reused++
                 } else {
                     // Changed since: the test that killed it last time is the likeliest to kill it again.
@@ -340,8 +272,6 @@ abstract class KrisprRunTask : KrisprForkTask() {
         val pool = Executors.newFixedThreadPool(threadCount)
         val workers = WorkerPool(runner, isolated)
         val confirm = confirmKills.get()
-        val keepAfterKill = robolectricKeepAfterKill.get()
-        val killMatrixEnabled = killMatrix.get()
         val disagreements = AtomicInteger()
         // Timeouts on a host slower than when the timeouts were set: run again, or UNKNOWN.
         val slowRetried = AtomicInteger()
@@ -349,9 +279,7 @@ abstract class KrisprRunTask : KrisprForkTask() {
         // Mutants reaching tests the reuse check rejected that their other tests killed in a worker.
         val partialKills = AtomicInteger()
         // Only a Robolectric module's workers share a sandbox between mutants.
-        val survivorChecks = SurvivorChecks(robolectric && confirmSurvivors.get())
-        var timeoutOf: (List<String>) -> Long = { PROBE_TIMEOUT_MILLIS }
-        val changes = ConcurrentHashMap<Int, Change>()
+        val survivorChecks = SurvivorChecks(robolectric && sandboxReuse)
         try {
             if (covered.isNotEmpty()) {
                 val baselineSelectors = covered.flatMap { killers.getValue(it.id) }.toSortedSet().toList()
@@ -360,13 +288,13 @@ abstract class KrisprRunTask : KrisprForkTask() {
                 if (robolectric) {
                     logger.lifecycle(
                         "krispr: ${covered.size - plainCount} mutants reached by Robolectric tests, $plainCount only by plain tests" +
-                            if (plainCount > 0) " (these run in reused JVMs whatever robolectricReuse says)" else "",
+                            if (plainCount > 0) " (these run in reused JVMs whatever robolectric says)" else "",
                     )
                 }
                 val reuse = when {
                     !reuseJvms.get() -> false.also { logger.lifecycle("krispr: reuseJvms is off; one JVM per mutant") }
                     robolectric && !sandboxReuse && plainCount == 0 ->
-                        false.also { logger.lifecycle("krispr: robolectricReuse is $FRESH; one JVM per mutant") }
+                        false.also { logger.lifecycle("krispr: robolectric is $FRESH; one JVM per mutant") }
                     // Workers run the plain-only mutants alone, so the check runs their tests alone.
                     robolectric && !sandboxReuse ->
                         withJvmSlot { workers.check(covered.filter { plainOnly(it) }.flatMap { killers.getValue(it.id) }.toSortedSet().toList()) }
@@ -400,7 +328,6 @@ abstract class KrisprRunTask : KrisprForkTask() {
                     baseline.millis, baselineSelectors, { recorded[it]?.ownMillis }, baseline.timing,
                     if (reuse) workers.checkTimings else emptyList(), timeoutFactor.get(), timeoutConstantMillis.get(), timeoutMinimum,
                 )
-                timeoutOf = timeouts::forFork
                 logger.lifecycle(
                     "krispr: ${mutants.size} mutants, ${covered.size} covered; baseline ${baseline.millis} ms, " +
                         "timeout $timeoutMinimum to ${timeouts.max} ms, $threadCount threads, at most $cap JVMs at once build-wide" +
@@ -417,38 +344,27 @@ abstract class KrisprRunTask : KrisprForkTask() {
                  * the caller to rerun it.
                  */
                 fun judge(selectors: List<String>, result: ForkRunner.Result, runner: String): Outcome {
-                    fun outcome(
-                        status: MutantStatus, killedBy: String? = null, reason: String? = null, killer: String? = null,
-                        allKillers: List<String> = emptyList(), testedTests: List<String> = emptyList(),
-                    ) = Outcome(status, names(selectors), killedBy, result.millis, runner, reason, killer, allKillers, testedTests)
+                    fun outcome(status: MutantStatus, killedBy: String? = null, reason: String? = null, killer: String? = null) =
+                        Outcome(status, names(selectors), killedBy, result.millis, runner, reason, killer)
                     return when {
                         result.timedOut -> outcome(MutantStatus.TIMED_OUT)
                         // Only forks report it: a worker's heap may be full of earlier mutants' leaks.
                         result.memoryError && result.activated -> outcome(MutantStatus.MEMORY_ERROR, "OutOfMemoryError")
-                        result.exitCode == 0 && result.activated -> outcome(MutantStatus.SURVIVED, testedTests = names(selectors))
+                        result.exitCode == 0 && result.activated -> outcome(MutantStatus.SURVIVED)
                         result.exitCode == 0 -> outcome(MutantStatus.UNKNOWN, reason = NOT_ACTIVATED)
                         result.exitCode == 1 -> {
-                            // Every failure that passed in the baseline confirms a kill; without the kill matrix,
-                            // failFast stops the run at the first one, so there is usually only one to find here.
-                            val confirmedFailures = result.failures.filter { (id, _) ->
+                            // A failure that passed in the baseline confirms a kill; failFast stops the run at the first
+                            // failing batch, so there is usually only one to find here.
+                            val confirmed = result.failures.firstOrNull { (id, _) ->
                                 baselineSelectors.any { overlaps(id, it) } && baseline.failures.none { overlaps(it.first, id) }
                             }
-                            val confirmed = confirmedFailures.firstOrNull()
                             when {
                                 !result.activated -> outcome(MutantStatus.UNKNOWN, result.firstFailure, "a test failed without activating the mutant")
                                 confirmed == null -> outcome(MutantStatus.UNKNOWN, result.firstFailure, "the failing test has no passing run without the mutant")
-                                else -> {
-                                    val killerIndex = selectors.indexOfFirst { overlaps(confirmed.first, it) }
-                                    val allKillerSelectors = confirmedFailures.mapNotNull { (id, _) -> selectors.firstOrNull { overlaps(id, it) } }.distinct()
-                                    // Without the kill matrix, only the failFast batch containing the killer ran;
-                                    // the rest, in later batches, never got a turn against this mutant. A whole
-                                    // batch runs before failures are checked, so the killer need not be its last test.
-                                    val evidence = if (killMatrixEnabled || killerIndex < 0) selectors else selectors.subList(0, batchEnd(killerIndex, selectors.size))
-                                    outcome(
-                                        MutantStatus.KILLED, confirmed.second, killer = selectors.getOrNull(killerIndex),
-                                        allKillers = names(allKillerSelectors), testedTests = names(evidence),
-                                    )
-                                }
+                                else -> outcome(
+                                    MutantStatus.KILLED, confirmed.second,
+                                    killer = selectors.firstOrNull { overlaps(confirmed.first, it) },
+                                )
                             }
                         }
                         else -> outcome(MutantStatus.RUN_ERROR, "exit ${result.exitCode}")
@@ -464,25 +380,21 @@ abstract class KrisprRunTask : KrisprForkTask() {
                     val sandboxed = routing.sandboxed(selectors)
                     // Only a kill counts in a worker that ran just some of the tests; see [Routing.workerTests].
                     val partial = selectors.any { it in workers.unsafe }
-                    val workerSelectors = routing.workerTests(selectors, mutant.initializer, reuse, sandboxReuse, workers.unsafe, killMatrixEnabled)
+                    val workerSelectors = routing.workerTests(selectors, mutant.initializer, reuse, sandboxReuse, workers.unsafe)
                     var forkTimeout = 0L
                     fun fork(name: String, timeout: Long = timeouts.forFork(selectors)): Outcome {
                         forkTimeout = timeout
-                        return judge(selectors, runner.run(name, mutant.id, selectors, timeout, failFast = !killMatrixEnabled), "fork")
+                        return judge(selectors, runner.run(name, mutant.id, selectors, timeout, failFast = true), "fork")
                     }
                     val inWorker = workerSelectors?.let {
-                        workers.run(
-                            lease, mutant.id, it, { tests, warm -> timeouts.forWorker(tests, warm) }, failFast = !killMatrixEnabled,
-                            keepAfterKill = keepAfterKill,
-                        )
+                        workers.run(lease, mutant.id, it) { tests, warm -> timeouts.forWorker(tests, warm) }
                     }
                     var outcome = inWorker?.let { result ->
                         val judged = judge(workerSelectors, result, "worker")
                         when {
                             !partial -> judged
                             judged.status == MutantStatus.KILLED -> Outcome(
-                                judged.status, names(selectors), judged.killedBy, judged.millis, judged.runner, judged.reason,
-                                judged.killer, judged.allKillers, judged.testedTests,
+                                judged.status, names(selectors), judged.killedBy, judged.millis, judged.runner, judged.reason, judged.killer,
                             ).also { partialKills.incrementAndGet() }
                             else -> null
                         }
@@ -516,7 +428,7 @@ abstract class KrisprRunTask : KrisprForkTask() {
                         // The host may be what got slow (#42): the same tests without the mutant, now, decide.
                         // See [Timeouts.afterTimeout].
                         val timeout = forkTimeout.takeIf { it > 0 } ?: timeouts.forFork(selectors)
-                        val control = runner.run("mutant-${mutant.id}-control", null, selectors, timeout, failFast = !killMatrixEnabled)
+                        val control = runner.run("mutant-${mutant.id}-control", null, selectors, timeout, failFast = true)
                         val load = "load average ${"%.1f".format(ManagementFactory.getOperatingSystemMXBean().systemLoadAverage)}"
                         when (val check = timeouts.afterTimeout(timeout, control)) {
                             TimeoutCheck.Kill -> Unit
@@ -592,7 +504,7 @@ abstract class KrisprRunTask : KrisprForkTask() {
                                 "${workers.retiredAfterKill.get()} retired",
                         )
                     }
-                    if (robolectric && sandboxReuse && confirmSurvivors.get()) logger.lifecycle(survivorChecks.summary())
+                    if (robolectric && sandboxReuse) logger.lifecycle(survivorChecks.summary())
                     if (workers.unsafe.isNotEmpty()) {
                         val reaching = covered.count { m -> killers.getValue(m.id).any { it in workers.unsafe } }
                         logger.lifecycle(
@@ -612,7 +524,6 @@ abstract class KrisprRunTask : KrisprForkTask() {
                     logger.lifecycle("krispr: rechecked $kills kills in fresh JVMs; ${disagreements.get()} were not killed again")
                 }
             }
-            if (showChanges.get() && !extreme) probeSurvivors(mutants, outcomes, killers, runner, logs, timeoutOf, pool, changes)
         } finally {
             pool.shutdownNow()
             workers.close()
@@ -634,8 +545,8 @@ abstract class KrisprRunTask : KrisprForkTask() {
         }
 
         val wallMillis = (System.nanoTime() - started) / 1_000_000
-        writeReport(mutants, outcomes, wallMillis, testTimes, diffRef, changes)
-        printSummary(mutants, outcomes, wallMillis, testTimes, changes)
+        writeReport(mutants, outcomes, wallMillis, testTimes, diffRef)
+        printSummary(mutants, outcomes, wallMillis, testTimes)
         if (diffRef != null && diffFailOnSurvivors.get()) {
             val survived = outcomes.values.count { it.status == MutantStatus.SURVIVED }
             if (survived > 0) {
@@ -645,41 +556,6 @@ abstract class KrisprRunTask : KrisprForkTask() {
                 )
             }
         }
-    }
-
-    /**
-     * showChanges: each survivor's tests run twice more in fresh forks, with the mutant off and then on,
-     * while the runtime probe records the values at its site ([ShowChanges.compare] reads them). A
-     * survivor of an operator with no probe is reported as not captured without a run.
-     */
-    private fun probeSurvivors(
-        mutants: List<Mutant>, outcomes: Map<Int, Outcome>, killers: Map<Int, List<String>>, runner: ForkRunner, logs: File,
-        timeoutOf: (List<String>) -> Long, pool: java.util.concurrent.ExecutorService, changes: MutableMap<Int, Change>,
-    ) {
-        val survivors = mutants.filter { outcomes[it.id]?.status == MutantStatus.SURVIVED }
-        if (survivors.isEmpty()) return
-        val started = System.nanoTime()
-        val probed = AtomicInteger()
-        survivors.map { mutant ->
-            pool.submit { withJvmSlot {
-                val selectors = killers[mutant.id].orEmpty()
-                changes[mutant.id] = if (mutant.operator in ShowChanges.UNPROBED || selectors.isEmpty()) {
-                    ShowChanges.notCaptured()
-                } else {
-                    probed.incrementAndGet()
-                    fun probe(side: String, active: Int?): ProbeValues? {
-                        val values = File(logs, "probe-${mutant.id}-$side.values").apply { delete() }
-                        val args = listOf("-D${ShowChanges.PROBE_PROPERTY}=${mutant.id}", "-D${ShowChanges.OUT_PROPERTY}=${values.absolutePath}")
-                        val result = runner.run("probe-${mutant.id}-$side", active, selectors, timeoutOf(selectors), extraJvmArgs = args)
-                        // A timeout or a crashed JVM (exit other than 0 or 1) leaves no trustworthy values file.
-                        return if (result.timedOut || result.exitCode !in 0..1) null else ProbeValues.read(values)
-                    }
-                    ShowChanges.compare(probe("original", null), probe("mutant", mutant.id))
-                }
-            } }
-        }.forEach { it.get() }
-        val millis = (System.nanoTime() - started) / 1_000_000
-        logger.lifecycle("krispr: showChanges probed ${probed.get()} of ${survivors.size} survivors in $millis ms")
     }
 
     /**
@@ -775,23 +651,20 @@ abstract class KrisprRunTask : KrisprForkTask() {
 
         /**
          * [timeout] of a run of the given tests, given whether the worker already set up its test framework.
-         * When a Robolectric test fails, the worker is retired unless [keepAfterKill]: then the failed tests
-         * run again here with no mutant active (the health check), and the worker is kept only if they pass.
+         * When a Robolectric test fails, the failed tests run again here with no mutant active (the health
+         * check), and the worker is kept only if they pass.
          */
-        fun run(
-            lease: Lease, mutant: Int, selectors: List<String>, timeout: (List<String>, Boolean) -> Long, failFast: Boolean,
-            keepAfterKill: Boolean,
-        ): ForkRunner.Result? {
+        fun run(lease: Lease, mutant: Int, selectors: List<String>, timeout: (List<String>, Boolean) -> Long): ForkRunner.Result? {
             val worker = lease.worker?.takeIf { it.usable && it.mutantsRun < MUTANTS_PER_WORKER } ?: run {
                 lease.close()
                 start()?.also { lease.worker = it }
             } ?: return null
             val result = worker.run(
-                "mutant-$mutant", mutant, selectors, timeout(selectors, worker.frameworkWarm), failFast = failFast,
+                "mutant-$mutant", mutant, selectors, timeout(selectors, worker.frameworkWarm), failFast = true,
                 keepAfterFrameworkFailure = true,
             )
             if (worker.needsHealthCheck) {
-                if (keepAfterKill && healthy(worker, mutant, selectors, result, timeout)) {
+                if (healthy(worker, mutant, selectors, result, timeout)) {
                     keptAfterKill.incrementAndGet()
                 } else {
                     worker.close()
@@ -868,7 +741,7 @@ abstract class KrisprRunTask : KrisprForkTask() {
 
     /**
      * Robolectric caches its sandbox class loaders, and the project classes in them, across tests; see
-     * [KrisprExtension.robolectricReuse].
+     * [KrisprExtension.robolectric].
      */
     private fun usesRobolectric(): Boolean =
         testClasspath.files.any { it.name.startsWith("robolectric-") || it.name.startsWith("shadows-framework-") }
@@ -942,10 +815,7 @@ abstract class KrisprRunTask : KrisprForkTask() {
         return if (file.startsWith(base)) base.relativize(file).toString() else path
     }
 
-    private fun writeReport(
-        mutants: List<Mutant>, outcomes: Map<Int, Outcome>, wallMillis: Long, testTimes: Map<String, Long>, diffRef: String?,
-        changes: Map<Int, Change> = emptyMap(),
-    ) {
+    private fun writeReport(mutants: List<Mutant>, outcomes: Map<Int, Outcome>, wallMillis: Long, testTimes: Map<String, Long>, diffRef: String?) {
         val counts = MutantStatus.entries.associate { status -> status.name to outcomes.values.count { it.status == status } }
         val entries = mutants.map { m ->
             val outcome = outcomes.getValue(m.id)
@@ -956,76 +826,28 @@ abstract class KrisprRunTask : KrisprForkTask() {
             ).apply {
                 outcome.runner?.let { put("runner", it) }
                 outcome.reason?.let { put("reason", it) }
-                if (outcome.allKillers.isNotEmpty()) put("killers", outcome.allKillers)
-                if (outcome.testedTests.isNotEmpty()) put("testedTests", outcome.testedTests)
-                changes[m.id]?.let { put("change", it.toJson()) }
             }
         }
         val scores = Scores(outcomes.values.map { it.status })
         val reused = outcomes.values.count { it.runner == HISTORY }
-        val root = if (mode.get() == EXTREME) {
-            // No score: a function whose body can go unnoticed is a finding on its own, not a fraction.
-            val pseudoTested = pseudoTested(mutants, outcomes).map { m ->
-                linkedMapOf("file" to relative(m.file), "line" to m.line, "declaration" to m.declaration, "tests" to outcomes.getValue(m.id).tests)
-            }
-            linkedMapOf(
-                "summary" to linkedMapOf(
-                    "mode" to EXTREME, "functions" to mutants.size, "wallMillis" to wallMillis, "reused" to reused,
-                    "tested" to scores.killed, "pseudoTested" to pseudoTested.size, "killMatrix" to killMatrix.get(),
-                ) + counts,
-                "pseudoTested" to pseudoTested,
-                "mutants" to entries,
-            )
-        } else {
-            linkedMapOf(
-                "summary" to linkedMapOf(
-                    "total" to mutants.size, "wallMillis" to wallMillis, "reused" to reused,
-                    "killed" to scores.killed, "valid" to scores.valid, "covered" to scores.covered,
-                    "mutationScore" to scores.ofValid, "coveredScore" to scores.ofCovered, "killMatrix" to killMatrix.get(),
-                    "diffBase" to diffRef,
-                ) + counts,
-                "mutants" to entries,
-                "testTimes" to testTimes,
-            )
-        }
+        val root = linkedMapOf(
+            "summary" to linkedMapOf(
+                "total" to mutants.size, "wallMillis" to wallMillis, "reused" to reused,
+                "killed" to scores.killed, "valid" to scores.valid, "covered" to scores.covered,
+                "mutationScore" to scores.ofValid, "coveredScore" to scores.ofCovered, "diffBase" to diffRef,
+            ) + counts,
+            "mutants" to entries,
+            "testTimes" to testTimes,
+        )
         report.get().asFile.apply { parentFile.mkdirs() }.writeText(JsonOutput.prettyPrint(JsonOutput.toJson(root)) + "\n")
     }
 
-    /** Extreme mode's finding: functions whose body went and no test failed. */
-    private fun pseudoTested(mutants: List<Mutant>, outcomes: Map<Int, Outcome>) =
-        mutants.filter { outcomes.getValue(it.id).status == MutantStatus.SURVIVED }
-            .sortedWith(compareBy({ relative(it.file) }, { it.line }, { it.column }, { it.id }))
-
-    private fun printSummary(
-        mutants: List<Mutant>, outcomes: Map<Int, Outcome>, wallMillis: Long, testTimes: Map<String, Long>,
-        changes: Map<Int, Change> = emptyMap(),
-    ) {
-        fun count(vararg statuses: MutantStatus) = outcomes.values.count { it.status in statuses }
+    private fun printSummary(mutants: List<Mutant>, outcomes: Map<Int, Outcome>, wallMillis: Long, testTimes: Map<String, Long>) {
         val scores = Scores(outcomes.values.map { it.status })
-        if (mode.get() == EXTREME) {
-            val pseudoTested = pseudoTested(mutants, outcomes)
-            logger.lifecycle(
-                "krispr: extreme mode, ${mutants.size} functions: ${scores.killed} tested, ${pseudoTested.size} pseudo-tested, " +
-                    "${count(MutantStatus.NO_COVERAGE)} not covered, ${count(MutantStatus.UNKNOWN)} unknown, " +
-                    "${count(MutantStatus.NOT_MEASURED)} not measured, ${count(MutantStatus.RUN_ERROR)} run errors; " +
-                    "wall ${"%.1f".format(wallMillis / 1000.0)}s",
-            )
-            if (pseudoTested.isNotEmpty()) {
-                logger.lifecycle("Pseudo-tested (covered, yet no test fails without the body):")
-                for (m in pseudoTested) {
-                    val covering = outcomes.getValue(m.id).tests
-                    val tests = covering.take(3).joinToString(", ") + if (covering.size > 3) " +${covering.size - 3} more" else ""
-                    logger.lifecycle("  ${relative(m.file)}:${m.line}  ${m.declaration}  [tests: $tests]")
-                }
-            }
-            logger.lifecycle("Report: ${report.get().asFile}")
-            return
-        }
         val counts = MutantStatus.entries.associateWith { status -> outcomes.values.count { it.status == status } }
         val summary = ReportSummary(
             total = mutants.size, wallMillis = wallMillis, killed = scores.killed, valid = scores.valid,
             covered = scores.covered, mutationScore = scores.ofValid, coveredScore = scores.ofCovered, counts = counts,
-            killMatrix = killMatrix.get(),
         )
         val mutantReports = mutants.map { m ->
             val outcome = outcomes.getValue(m.id)
@@ -1033,8 +855,6 @@ abstract class KrisprRunTask : KrisprForkTask() {
                 id = m.id, file = relative(m.file), line = m.line, column = m.column, operator = m.operator,
                 description = m.description, status = outcome.status, tests = outcome.tests,
                 killedBy = outcome.killedBy, millis = outcome.millis, runner = outcome.runner, reason = outcome.reason,
-                killers = outcome.allKillers, testedTests = outcome.testedTests,
-                change = changes[m.id],
             )
         }
         val cap = maxSurvivorsPerFile.get()
@@ -1059,9 +879,6 @@ abstract class KrisprRunTask : KrisprForkTask() {
     }
 
     companion object {
-        /** A probe run's timeout when no baseline ran (every survivor's verdict came from the history). */
-        private const val PROBE_TIMEOUT_MILLIS = 10 * 60_000L
-
         /** The reason of a survivor whose tests never reached it; it gets one rerun. */
         private const val NOT_ACTIVATED = "its tests did not activate the mutant"
 
@@ -1093,7 +910,7 @@ abstract class KrisprRunTask : KrisprForkTask() {
             Regex("""\[(?:class|nested-class|runner|method|test|test-template|test-factory):([^\]]*)]""").findAll(selector)
                 .joinToString(".") { it.groupValues[1] }.ifEmpty { selector }
         private const val RUNTIME_MARKER = "dev/krispr/runtime/Mutants.class"
-        private const val SANDBOX = "sandbox"
+        private const val REUSE = "reuse"
         private const val FRESH = "fresh"
         private const val MUTANTS_PER_WORKER = 100
 

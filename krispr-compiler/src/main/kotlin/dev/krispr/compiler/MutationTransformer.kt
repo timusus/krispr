@@ -195,8 +195,11 @@ class MutationTransformer(
 
         // Decided on the lambda as written, before its statements are rewritten.
         val launch = isSkippableLaunch(expression)
+        val scopeBody = !launch && isSkippableScopeBody(expression)
         expression.transformChildrenVoid(this)
+        if (expression.origin == null) mutateLiteralArguments(expression)
         if (launch) return skipLaunchBody(expression)
+        if (scopeBody) return skipScopeBody(expression)
         if (expression.origin in INCREMENTS) return mutateIncrement(expression)
         if (isUnaryMinus(expression)) return mutateUnaryMinus(expression)
         return when (expression.origin) {
@@ -207,6 +210,7 @@ class MutationTransformer(
                 if (expression.symbol == builtIns.eqeqSymbol) mutateEquality(expression, expression, negated = false)
                 else expression
             IrStatementOrigin.IN, IrStatementOrigin.NOT_IN -> mutateRange(expression) ?: expression
+            IrStatementOrigin.FOR_LOOP_ITERATOR -> expression.also(::mutateLoopRange)
             null -> mutateBitwise(expression) ?: mutateChainCall(expression) ?: mutatePropagation(expression) ?: mutateCollectionSwap(expression)
                 ?: mutateFlowOperator(expression) ?: mutateContext(expression) ?: mutateCopy(expression)
                 ?: mutatePrecondition(expression) ?: mutateNamedDefaults(expression) ?: expression
@@ -216,6 +220,7 @@ class MutationTransformer(
 
     override fun visitConstructorCall(expression: IrConstructorCall): IrExpression {
         expression.transformChildrenVoid(this)
+        mutateLiteralArguments(expression)
         return mutateNamedDefaults(expression) ?: expression
     }
 
@@ -305,6 +310,121 @@ class MutationTransformer(
             for (index in conditions.indices.reversed()) {
                 val condition = conditions[index] ?: continue
                 result = irIfThenElse(builtIns.booleanType, condition, mutants[index], result)
+            }
+            +result
+        }
+    }
+
+    /**
+     * `for (i in a..b)`, `a until b`, `a..<b` and `a downTo b` on Int, Long and Char: two mutants, one per bound,
+     * as RANGE_BOUNDARY gives `x in a..b`. The first element is left out (`a..b → (a + 1)..b`, `a downTo b →
+     * (a - 1) downTo b`), and the last is left out or added (`a..b → a until b`, `a until b → a..b`, `a downTo b →
+     * a downTo (b + 1)`). [iterator] is the `iterator()` call a `for` loop desugars to; a stepped range is left alone.
+     */
+    private fun mutateLoopRange(iterator: IrCall) {
+        if (Operator.RANGE_BOUNDARY !in operators) return
+        val index = iterator.arguments.indexOfFirst { it != null }
+        val range = iterator.arguments.getOrNull(index) as? IrCall ?: return
+        val kind = rangeKind(range) ?: return
+        if (range.arguments.size != 2) return
+        val a = range.arguments[0] ?: return
+        val b = range.arguments[1] ?: return
+        val type = a.type
+        if (type.isMarkedNullable() || b.type.classifierOrNull != type.classifierOrNull) return
+        if (!(type.isInt() || type.isLong() || type.isChar())) return
+        val owner = type.classifierOrNull?.owner as? IrClass ?: return
+        fun step(name: String) = owner.functions.firstOrNull { it.name.asString() == name && it.regularParameters.isEmpty() }?.symbol
+        val inc = step("inc") ?: return
+        val dec = step("dec") ?: return
+        val down = kind == "downTo"
+        val (x, y) = snippet(a) to snippet(b)
+        val text = snippet(range)
+        val startText = if (down) "$text → ($x - 1) downTo $y" else "$text → ($x + 1)${text.removePrefix(x)}"
+        val endText = when (kind) {
+            "rangeTo" -> "$text → $x until $y"
+            "downTo" -> "$text → $x downTo ($y + 1)"
+            else -> "$text → $x..$y"
+        }
+        val rewritten = rewriteEach(range, listOf(Operator.RANGE_BOUNDARY to startText, Operator.RANGE_BOUNDARY to endText)) { conditions ->
+            val ta = irTemporary(a, nameHint = "krispr")
+            val tb = irTemporary(b, nameHint = "krispr")
+            fun shifted(value: IrVariable, function: IrSimpleFunctionSymbol, condition: IrExpression?): IrExpression {
+                condition ?: return irGet(value)
+                val moved = irCall(function).apply { arguments[0] = irGet(value) }
+                return irIfThenElse(type, condition, moved, irGet(value))
+            }
+            // The first element moves inwards; the last one inwards for an inclusive range, outwards for `until`.
+            range.arguments[0] = shifted(ta, if (down) dec else inc, conditions[0])
+            range.arguments[1] = shifted(tb, if (kind == "rangeTo") dec else inc, conditions[1])
+            +range
+        } ?: return
+        iterator.arguments[index] = rewritten
+    }
+
+    /**
+     * Literal arguments of a call written in the source: a `true` or `false` flipped (BOOLEAN_ARGUMENT,
+     * `equals(other, ignoreCase = true)`), and a number `n` passed to one of [SIZE_ARGUMENT_FUNCTIONS] made
+     * `n + 1` and `n - 1` (NUMERIC_ARGUMENT, `take(3)`). A count that would become negative, or a chunk or window
+     * size or step under one, only throws, so it is left out. Arguments of a vararg parameter are not mutated.
+     */
+    private fun mutateLiteralArguments(call: IrFunctionAccessExpression) {
+        val flip = Operator.BOOLEAN_ARGUMENT in operators
+        val function = call.symbol.owner
+        val sized = Operator.NUMERIC_ARGUMENT in operators && function.name.asString() in SIZE_ARGUMENT_FUNCTIONS &&
+            packageOf(function)?.startsWith("kotlin") == true
+        if ((!flip && !sized) || !call.hasOffsets()) return
+        val text = source ?: return
+        for (parameter in function.regularParameters) {
+            if (parameter.varargElementType != null) continue
+            val index = function.parameters.indexOf(parameter)
+            val argument = call.arguments.getOrNull(index) as? IrConst ?: continue
+            if (!argument.hasOffsets() || argument.startOffset < call.startOffset || argument.endOffset > call.endOffset) continue
+            if (argument.endOffset > text.length) continue
+            val written = text.substring(argument.startOffset, argument.endOffset)
+            fun describe(replacement: String): String {
+                val start = startOf(call)
+                return oneLine(text.substring(start, call.endOffset)) + " → " +
+                    oneLine(text.substring(start, argument.startOffset) + replacement + text.substring(argument.endOffset, call.endOffset))
+            }
+            val value = argument.value
+            val mutated: IrExpression? = when {
+                flip && value is Boolean && (written == "true" || written == "false") ->
+                    rewrite(argument, Operator.BOOLEAN_ARGUMENT, describe((!value).toString())) { condition, _ ->
+                        +irIfThenElse(argument.type, condition, if (value) irFalse() else irTrue(), argument)
+                    }
+                sized && value is Number -> numericArgument(argument, value, function.name.asString(), written, ::describe)
+                else -> null
+            }
+            if (mutated != null && mutated !== argument) call.arguments[index] = mutated
+        }
+    }
+
+    /** `n → n + 1` and `n → n - 1` for an Int, Long, Float or Double literal; see [mutateLiteralArguments]. */
+    private fun numericArgument(argument: IrConst, value: Number, name: String, written: String, describe: (String) -> String): IrExpression? {
+        val type = argument.type
+        val (up, down) = when {
+            type.isInt() -> (value.toInt() + 1).let { IrConstImpl.int(argument.startOffset, argument.endOffset, type, it) to it.toString() } to
+                (value.toInt() - 1).let { IrConstImpl.int(argument.startOffset, argument.endOffset, type, it) to it.toString() }
+            type.isLong() -> (value.toLong() + 1).let { IrConstImpl.long(argument.startOffset, argument.endOffset, type, it) to "${it}L" } to
+                (value.toLong() - 1).let { IrConstImpl.long(argument.startOffset, argument.endOffset, type, it) to "${it}L" }
+            type.isDouble() -> (value.toDouble() + 1).let { IrConstImpl.double(argument.startOffset, argument.endOffset, type, it) to it.toString() } to
+                (value.toDouble() - 1).let { IrConstImpl.double(argument.startOffset, argument.endOffset, type, it) to it.toString() }
+            type.isFloat() -> (value.toFloat() + 1).let { IrConstImpl.float(argument.startOffset, argument.endOffset, type, it) to "${it}f" } to
+                (value.toFloat() - 1).let { IrConstImpl.float(argument.startOffset, argument.endOffset, type, it) to "${it}f" }
+            else -> return null
+        }
+        if (written.isEmpty()) return null
+        // Only a clamp's bound may go below zero; a negative count throws, and so does a chunk or window under one.
+        val least = if (name == "chunked" || name == "windowed") 1 else 0
+        val mutants = listOfNotNull(
+            up,
+            down.takeIf { name.startsWith("coerce") || value.toDouble() - 1 >= least },
+        )
+        return rewriteEach(argument, mutants.map { Operator.NUMERIC_ARGUMENT to describe(it.second) }) { conditions ->
+            var result: IrExpression = argument
+            for (i in conditions.indices.reversed()) {
+                val condition = conditions[i] ?: continue
+                result = irIfThenElse(type, condition, mutants[i].first, result)
             }
             +result
         }
@@ -410,6 +530,7 @@ class MutationTransformer(
             is IrContainerExpression -> {
                 if (statement is IrBlock && statement.origin == IrStatementOrigin.SAFE_CALL && isSkippableSafeCall(statement)) {
                     discardedSafeCalls += statement
+                    ((statement.statements[1] as IrWhen).branches[1].result as? IrCall)?.let { safeCallBodies += it }
                 }
                 markDiscarded(statement.statements.lastOrNull())
             }
@@ -446,6 +567,9 @@ class MutationTransformer(
 
     /** `x?.let { … }` and `x?.f()` statements whose body SAFE_CALL_BODY skips, chosen before their children are rewritten. */
     private val discardedSafeCalls = mutableSetOf<IrBlock>()
+
+    /** The calls after the null check of [discardedSafeCalls]: SCOPE_FUNCTION_BODY leaves them to SAFE_CALL_BODY. */
+    private val safeCallBodies = mutableSetOf<IrCall>()
 
     /**
      * `x?.let { … }` (or `also`, `run`, `apply`) with a lambda literal that does more than log, or a Unit call
@@ -730,6 +854,42 @@ class MutationTransformer(
         val effects = statements.filterNot { it is IrCall && (arid.isArid(it) || arid.isAridExceptLambdas(it)) || it is IrGetObjectValue }
         val only = effects.singleOrNull()
         return effects.isNotEmpty() && !(Operator.REMOVE_CALL in operators && only is IrCall && isRemovableCall(only))
+    }
+
+    /**
+     * `also { … }` and `apply { … }`, and a `let { … }` or `run { … }` whose value nothing reads, with a lambda literal
+     * that does more than log or make one call or assignment REMOVE_CALL or REMOVE_ASSIGNMENT already removes. A
+     * safe call's (`x?.let { … }` as a statement) is SAFE_CALL_BODY's.
+     */
+    private fun isSkippableScopeBody(call: IrCall): Boolean {
+        if (Operator.SCOPE_FUNCTION_BODY !in operators || !call.hasOffsets() || call in safeCallBodies) return false
+        val function = call.symbol.owner
+        val name = function.name.asString()
+        if (name !in SCOPE_FUNCTIONS || packageOf(function) != "kotlin") return false
+        val lambda = call.arguments.lastOrNull() as? IrFunctionExpression ?: return false
+        if (!lambda.hasOffsets() || arid.isArid(lambda)) return false
+        val returns = lambda.function.returnType
+        val unused = name == "also" || name == "apply" || lambda.function in discardedLambdas
+        if (!unused || (!returns.isUnit() && defaultValue(returns) == null)) return false
+        val statements = (lambda.function.body as? IrBlockBody)?.statements?.map(::unwrapStatement) ?: return false
+        val effects = statements.filterNot { it is IrCall && (arid.isArid(it) || arid.isAridExceptLambdas(it)) || it is IrGetObjectValue }
+        val only = effects.singleOrNull() as? IrCall
+        val removedAnyway = only != null && ((Operator.REMOVE_CALL in operators && isRemovableCall(only)) || isRemovableAssignment(only))
+        return effects.isNotEmpty() && !removedAnyway
+    }
+
+    /** `x.apply { … } → (body skipped)`: the lambda returns at once, with a default value when its value is not Unit. */
+    private fun skipScopeBody(call: IrCall): IrExpression {
+        val lambda = call.arguments.last() as IrFunctionExpression
+        val body = lambda.function.body as IrBlockBody
+        val name = call.symbol.owner.name.asString()
+        val returns = lambda.function.returnType
+        return rewrite(call, Operator.SCOPE_FUNCTION_BODY, "$name { … } → (body skipped)") { condition, _ ->
+            val inLambda = DeclarationIrBuilder(context, lambda.function.symbol, body.startOffset, body.startOffset)
+            val value = if (returns.isUnit()) inLambda.irGetObject(builtIns.unitClass) else defaultValue(returns)!!.second.invoke(inLambda)
+            body.statements.add(0, inLambda.irIfThen(builtIns.unitType, condition, inLambda.irReturn(value)))
+            +call
+        }
     }
 
     /** `launch { … } → (body skipped)`: the lambda returns at once, so the job still runs and completes. */
@@ -1334,9 +1494,17 @@ class MutationTransformer(
                 expression
             }
             IrStatementOrigin.WHEN -> {
+                // Without a subject, each branch condition is an `if` condition and gets the same mutants.
+                val subject = hasSubject(expression)
                 expression.branches.forEachIndexed { index, branch ->
-                    if (branch !is IrElseBranch && isTypeCheck(branch.condition)) branch.condition = skipBranch(branch.condition)
-                    else forceCondition(branch, forcing[index]) { "${snippet(branch.condition)} → $it" }
+                    if (branch !is IrElseBranch && isTypeCheck(branch.condition)) {
+                        branch.condition = skipBranch(branch.condition)
+                        return@forEachIndexed
+                    }
+                    val both = forceCondition(branch, forcing[index]) { "${snippet(branch.condition)} → $it" }
+                    if (!subject && branch !is IrElseBranch && !equalityConditions[index] && !both) {
+                        branch.condition = negateCondition(branch.condition, inWhen = true)
+                    }
                 }
                 for (route in routes) route.branch.result = routeBranch(expression, route)
                 expression
@@ -1453,7 +1621,7 @@ class MutationTransformer(
         if (condition is IrConst || !condition.hasOffsets() || arid.isAridValue(condition)) return Forcing.NONE
         // An `else` only Compose put there (its group calls) is no `else` at all.
         val onlyBranch = expression.branches.all { it === branch || (it is IrElseBranch && isEmptyBody(it.result)) }
-        val onlyRemovesACall = expression.origin == IrStatementOrigin.IF && expression.type.isUnit() && onlyBranch &&
+        val onlyRemovesACall = expression.type.isUnit() && onlyBranch &&
             isSingleRemovableCall(branch.result)
         return Forcing(
             toTrue = Operator.CONDITION_TRUE in operators && !smartCastsWhenTrue(condition),
@@ -1887,9 +2055,11 @@ class MutationTransformer(
         }
     }
 
-    private fun negateCondition(condition: IrExpression): IrExpression {
+    /** `if (c) → if (!(c))`, or `c → !(c)` for the branch of a `when` without a subject ([inWhen]). */
+    private fun negateCondition(condition: IrExpression, inWhen: Boolean = false): IrExpression {
         val text = snippet(condition)
-        return rewrite(condition, Operator.NEGATE_IF, "if ($text) → if (!($text))") { active, _ ->
+        val description = if (inWhen) "$text → !($text)" else "if ($text) → if (!($text))"
+        return rewrite(condition, Operator.NEGATE_IF, description) { active, _ ->
             val value = irTemporary(condition, nameHint = "krispr")
             +irIfThenElse(builtIns.booleanType, active, irNot(irGet(value)), irGet(value))
         }
@@ -2159,6 +2329,12 @@ class MutationTransformer(
 
         /** The scope functions a skipped `x?.let { … }` may call. */
         val SCOPE_FUNCTIONS = setOf("let", "also", "run", "apply")
+
+        /** Standard library functions whose numeric literal arguments NUMERIC_ARGUMENT moves by one. */
+        val SIZE_ARGUMENT_FUNCTIONS = setOf(
+            "take", "drop", "takeLast", "dropLast", "chunked", "windowed", "subList", "padStart", "padEnd",
+            "coerceIn", "coerceAtMost", "coerceAtLeast",
+        )
 
         /** Casts that keep the value: a discarded cast discards its operand. */
         val VALUE_PRESERVING_CASTS = setOf(

@@ -1,0 +1,70 @@
+id	operator	verdict	tags	reason
+1021580659	BOOLEAN_ARGUMENT	PIN		kdoc ending in a non-String arg (e.g. addKdoc("See %T", x)) is not fixed by ensureEndsWithNewLine (Util.jvm.kt only appends to String args), so without ensureTrailingNewline the output becomes " * See X */" (probe confirmed original renders the newline).
+1557852616	BOOLEAN_ARGUMENT	PIN		%P literal would go through LineWrapper.append, which turns '·' into ' ' and '♢' into a wrap point; probe: CodeBlock.of("%P","a·b") renders """a·b""" today.
+561471923	BOOLEAN_ARGUMENT	PIN		FunSpec emitted via %L (e.g. in a script body) would use kdoc instead of kdocWithTags, dropping @param/@receiver/@return tags.
+1864382387	BOOLEAN_ARGUMENT	EQUIV		collectingImports only toggles default-import filtering of "import %L" String lines in the collector pass, which writes to NullAppendable and cannot affect importableTypes/referencedNames.
+1676614607	BOOLEAN_ARGUMENT	PIN		Top-level FunSpec with parameter/return/receiver kdoc would lose its @param/@return/@receiver tags (FunSpec.emit includeKdocTags selects kdocWithTags).
+155275071	BOOLEAN_ARGUMENT	EQUIV		getCharContent(ignoreEncodingErrors) ignores its parameter and just returns this@FileSpec.toString().
+957169391	BOOLEAN_ARGUMENT	PIN		typeNameOf<Outer<String>.Inner<Int>>() would get a nullable enclosingType; emit ignores it but equals/hashCode compare enclosingType, so it no longer equals Outer.parameterizedBy(STRING).nestedClass("Inner", listOf(INT)).
+1827636162	BOOLEAN_ARGUMENT	PIN		Getter with receiver(type, kdoc) (allowed for accessors) would emit an extra @receiver tag via kdocWithTags.
+248674863	BOOLEAN_ARGUMENT	PIN		Setter whose parameter has kdoc would gain a "@param value ..." tag in the setter kdoc.
+159088312	BOOLEAN_ARGUMENT	PIN		Type annotation with 2+ members would render non-inline (multi-line with trailing comma) instead of @Ann(a = 1, b = 2) in AnnotationSpec.emit.
+1949865763	BOOLEAN_ARGUMENT	PIN		Annotated non-property primary-constructor parameter would render "@Ann p: T" instead of "@Ann\np: T" (emitAnnotations inline flag).
+1648369367	BOOLEAN_ARGUMENT	PIN	BUG?	Secondary constructor with parameter kdoc would gain @param tags; probe shows today such parameter kdoc is silently dropped from output, which looks like a bug.
+824306338	BOOLEAN_ARGUMENT	PIN		Member function in a class with parameter/return kdoc would lose its @param/@return tags.
+1694216796	BOOLEAN_ARGUMENT	EQUIV		failIfEscapeInvalid can never fail on escapeIfNecessary output: every ILLEGAL_CHARACTERS_TO_ESCAPE char is non-identifier-part so the string gets backticked, and backticked strings pass.
+1478284034	NAMED_DEFAULT_DROP	EQUIV		AnnotationSpec.emit(asParameter: Boolean = false) default equals the dropped value false.
+1453224403	NAMED_DEFAULT_DROP	PIN		emitCode ensureTrailingNewline defaults to false, same effect as 1021580659 (kdoc ending in %T loses its trailing newline before " */").
+322404519	NAMED_DEFAULT_DROP	EQUIV		stringLiteralWithQuotes(isInsideRawString: Boolean = false) default equals the dropped value false.
+1787020990	NAMED_DEFAULT_DROP	PIN		isConstantContext defaults to false, so %P "a\nb" in a const val or annotation member would render as """...""".trimMargin() (not a constant expression).
+1903063085	NAMED_DEFAULT_DROP	PIN		emit(nonWrapping: Boolean = false) default differs from true; same effect as 1557852616 ('·'/'♢' in %P literals reinterpreted).
+1499605690	NAMED_DEFAULT_DROP	PIN	BUG?	Keeping annotations on the %T ClassName leaks them into importableType (alias branch keeps className.copy(nullable=false)), so an annotated aliased nested class renders fully qualified or crashes; probe shows the same leak already hits annotated type arguments today (List<@Ann Inner> + plain Inner with alias throws "Collection has more than one element").
+128240910	NAMED_DEFAULT_DROP	PIN		FunSpec.emit includeKdocTags defaults to false, so %L-emitted FunSpec (script body) loses @param/@return tags.
+2007751101	NAMED_DEFAULT_DROP	PIN		LambdaTypeName constructor tags default is emptyMap(), so lambda.copy(nullable = true).tag<T>() would lose tags.
+1262552564	NAMED_DEFAULT_DROP	PIN		ParameterSpec.emit inlineAnnotations defaults to true (not false), so annotated non-property constructor params render inline.
+1225310053	NAMED_DEFAULT_DROP	EQUIV		escapeIfNecessary(validate = true) default only adds failIfEscapeInvalid, which cannot fail on escaped output (see 1694216796).
+761839870	NAMED_DEFAULT_DROP	PIN		TypeVariableName variance defaults to null, so a KTypeParameter declared out/in (e.g. List::class.typeParameters[0].asTypeVariableName()) loses its variance (visible in equals and emitted type variables).
+88942743	NUMERIC_ARGUMENT	EQUIV		Default tag is a random hex string used only as a private map key; padStart(15) is still injective and the value is never exposed deterministically.
+2147215029	NUMERIC_ARGUMENT	EQUIV		Default tag is a random hex string used only as a private map key; padStart(17) is still injective and the value is never exposed deterministically.
+437090263	NUMERIC_ARGUMENT	PIN		drop(2) skips the second char, so CodeBlock.of("%N","a-b") would render a-b instead of `a-b` (probe confirms `a-b` today).
+844060547	NUMERIC_ARGUMENT	EQUIV		drop(0) also checks the first char with isJavaIdentifierPart, which is implied by isJavaIdentifierStart already required by the first clause.
+855672341	PRECONDITION_REMOVAL	EQUIV		LineWrapper is internal; public paths never append after close (FileSpec.writeTo closes last, emitInto uses a fresh wrapper).
+225632244	PRECONDITION_REMOVAL	EQUIV		LineWrapper is internal; appendNonWrapping is never called on a closed wrapper through public paths.
+162488297	PRECONDITION_REMOVAL	EQUIV		Only caller CodeWriter.emit splits on '\n' before calling appendNonWrapping(line), so s never contains a newline.
+1563123413	PRECONDITION_REMOVAL	EQUIV		LineWrapper is internal; newline() is never called after close through public paths.
+1704639899	PRECONDITION_REMOVAL	EQUIV		Condition cannot be false: escapeIfNecessary backticks any string with illegal chars and escapeAsAlias replaces all non-identifier-part chars, so the require always passes.
+930426728	PRECONDITION_REMOVAL	EQUIV		names always has the package entry plus at least one split part (empty parts already rejected), so size >= 2 always holds.
+1241711583	PRECONDITION_REMOVAL	EQUIV		Void.TYPE.isPrimitive is true, so the preceding require(!isPrimitive) already rejects void.
+1952041085	PRECONDITION_REMOVAL	PIN	MISUSE	object{}::class.asClassName() (null qualifiedName) would fail with NPE instead of the IllegalArgumentException message.
+1529214613	PRECONDITION_REMOVAL	PIN	MISUSE	A local/anonymous TypeElement would produce a bogus ClassName instead of throwing "unexpected type testing".
+2010565148	PRECONDITION_REMOVAL	PIN	MISUSE	CodeBlock.builder().addNamed("%x", emptyMap()) would be accepted and emit "%x" literally instead of throwing "unknown format".
+795108843	PRECONDITION_REMOVAL	PIN	MISUSE	CodeBlock.of("%L %1L", "a") mixes relative and indexed args; mutant accepts it (later unused-arg checks pass) instead of throwing.
+450385603	PRECONDITION_REMOVAL	EQUIV		Only caller emitStaticImportMember returns false before calling extractMemberName unless isJavaIdentifierStart(first) holds.
+750447516	PRECONDITION_REMOVAL	PIN	MISUSE	CodeBlock.of("⇤foo").toString() would render with negative indent instead of throwing "cannot unindent".
+792536898	PRECONDITION_REMOVAL	EQUIV		pushPackage is only called once per fresh CodeWriter from FileSpec.emit; FileSpec cannot be nested as a %L literal.
+318896773	PRECONDITION_REMOVAL	EQUIV		popPackage is only called by FileSpec.emit after its own pushPackage, so the package is always set.
+1800765564	PRECONDITION_REMOVAL	PIN	BUG?	With member import on A, CodeBlock.of("%T⇥%T.x", A, A) defers the first A across "⇥"; mutant silently drops it instead of throwing; probe shows deferral across no-arg placeholders already drops ("val v: Int = ") or reorders ("\"s\"A + 1") types today.
+1299427379	PRECONDITION_REMOVAL	PIN	MISUSE	addImport(SomeClass::class) with no names would be a silent no-op instead of throwing "names array is empty".
+1396536578	PRECONDITION_REMOVAL	PIN	MISUSE	addImport(className) with no names would be a silent no-op instead of throwing "names array is empty".
+11470351	PRECONDITION_REMOVAL	PIN	MISUSE	addImport("pkg") with no names would be a silent no-op instead of throwing "names array is empty".
+1628496634	PRECONDITION_REMOVAL	PIN	MISUSE	addImport("pkg", "*") would emit a wildcard "import pkg.*" instead of throwing (the ClassName overload keeps its own check).
+1833694576	PRECONDITION_REMOVAL	PIN	MISUSE	addCode on a non-script FileSpec would silently add to a body that is never emitted instead of throwing.
+326705695	PRECONDITION_REMOVAL	PIN	MISUSE	addStatement on a non-script FileSpec would silently add to a body that is never emitted instead of throwing.
+2014842122	PRECONDITION_REMOVAL	EQUIV		FunSpec constructor is private and only reached via Builder.build(), which already checks setter parameters.size <= 1.
+1612941175	PRECONDITION_REMOVAL	PIN	MISUSE	A function with a body inside a nested class of an expect class (implicit EXPECT, not checked at build) would have its body silently omitted instead of throwing.
+638470994	PRECONDITION_REMOVAL	PIN	MISUSE	FunSpec.constructorBuilder().receiver(X) would be accepted instead of throwing.
+520475786	PRECONDITION_REMOVAL	PIN	MISUSE	ClassName.parameterizedBy() with no args (or copy(typeArguments = emptyList())) would build a type rendering "Foo" instead of throwing.
+1098204078	PRECONDITION_REMOVAL	PIN	MISUSE	PropertySpec.Builder.getter(FunSpec.builder("foo").build()) would be accepted and emit a "fun foo()" inside the property.
+1327942	PRECONDITION_REMOVAL	PIN	MISUSE	PropertySpec.Builder.setter(non-setter FunSpec) would be accepted instead of throwing.
+1549751218	PRECONDITION_REMOVAL	PIN	MISUSE	TypeAliasSpec with e.g. ABSTRACT modifier would build and emit "abstract typealias" instead of throwing.
+1137112469	PRECONDITION_REMOVAL	PIN	MISUSE	objectBuilder/interfaceBuilder.primaryConstructor(ctor) would be accepted instead of throwing.
+881753911	PRECONDITION_REMOVAL	PIN	MISUSE	primaryConstructor(non-constructor FunSpec) would be accepted instead of throwing.
+1449277844	PRECONDITION_REMOVAL	PIN	MISUSE	Only moves the failure: with VALUE already set, primaryConstructor(no-param ctor) no longer throws at that call, build() throws the same ISE later (TypeSpec.kt:947).
+1879501367	PRECONDITION_REMOVAL	PIN	MISUSE	A value class with addSuperclassConstructorParameter(...) and no superclass would build successfully (build's checkCanHaveSuperclass is the same mutated function and superclass == ANY passes).
+561319200	PRECONDITION_REMOVAL	PIN	MISUSE	interfaceBuilder().addSuperinterface(X, delegate) would be accepted and emit "X by ..." on an interface.
+779348168	PRECONDITION_REMOVAL	PIN	MISUSE	addSuperinterface(nullable type, delegate) would be accepted instead of throwing.
+1746927726	PRECONDITION_REMOVAL	PIN	MISUSE	Value class without primary constructor would throw NullPointerException instead of IllegalStateException with a message.
+949424781	PRECONDITION_REMOVAL	PIN	MISUSE	primaryConstructor(no-param ctor) called before addModifiers(VALUE) skips the builder check, so build() would accept a zero-parameter value class.
+179505790	PRECONDITION_REMOVAL	PIN	MISUSE	classBuilder.superclass(X).addModifiers(VALUE) avoids the setter check, so build() would accept a value class with a superclass.
+1798444271	PRECONDITION_REMOVAL	EQUIV		Every caller of internal TypeVariableName.of passes bounds.ifEmpty(NULLABLE_ANY_LIST), so bounds is never empty.
+1137520545	PRECONDITION_REMOVAL	PIN	MISUSE	Only reachable with a user-implemented java.lang.reflect.WildcardType that has 0 or 2+ upper bounds (real JVM wildcards always have exactly 1); asWildcardTypeName() would then build a malformed type instead of throwing.

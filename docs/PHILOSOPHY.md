@@ -124,7 +124,8 @@ research shows a few operators achieve about the same score as the full set (Off
 Just et al., STVR'15 on non-redundant ROR). Google ships five. The set:
 
 - relational (ROR): comparison boundaries (`<` becomes `<=`), negated equality (`==` becomes `!=`),
-  and range bounds (`x in a..b` excludes `a`, or `b`)
+  and range bounds (`x in a..b` excludes `a`, or `b`; a `for` loop over `a..b` skips its first element, or
+  its last)
 - logical connector (LCR): `&&` becomes `||`
 - arithmetic (AOR): `+` becomes `-`, `*` becomes `/`, `++` becomes `--`, and PIT's bitwise swaps
   (`and↔or`, `shl↔shr`, `x.inv() → x`)
@@ -136,18 +137,23 @@ Just et al., STVR'15 on non-redundant ROR). Google ships five. The set:
 - return values: Boolean returns negated, Int returns replaced by 0 (or 1), nullable returns replaced
   by `null`
 - elvis: `a ?: b` becomes `a!!`, so the fallback is never used
-- call removal: a Unit-returning call statement that is not arid is removed
+- call removal: a Unit-returning call statement that is not arid is removed, and so is the block of an
+  `also`, `apply`, or a `let` or `run` whose value nothing reads
 - chain call removal: a call that keeps its receiver's type is skipped (`filter`, `sorted`, `take`,
   `distinct`, …), and so is a value-preserving adjustment (`coerceIn`, `abs`, `trim`, a clamping
   `maxOf(0, x)`).
 - argument propagation (PIT's): a same-type text, collection or rounding transform (`removePrefix`,
   `replace`, `substringBefore`, `takeIf`, `xs + x`, `floor`) replaced by its receiver; it survives when
   no test passes an input the transform changes.
+- arguments: a `true`/`false` literal argument flipped (`ignoreCase = true`), a named argument whose
+  parameter has a default left out, and a count passed to `take`, `drop`, `chunked`, `padStart`,
+  `coerceIn` and the like moved by one.
 
 Opt-in, because they add many mutants for few new survivors: empty returns (`""`, `emptyList()`,
 `emptyFlow()`, …) and swapping collection calls (`any↔all`, `first↔last`, `min↔max`). On clikt and
 kotlinpoet they and chain call removal added 459 mutants; of 15 sampled new survivors 9 were real test
-gaps, 6 could not be caught and none was junk.
+gaps, 6 could not be caught and none was junk. Removing preconditions (`require`, `check`), dropping a `copy` argument and routing
+a sealed `when` branch are opt-in as well; see [architecture.md](architecture.md) for the measurement.
 
 ## Cost
 

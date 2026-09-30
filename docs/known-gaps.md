@@ -25,8 +25,7 @@
   - `> 0` → `>= 0` where the value is never 0
   - `&&`/`||` flips hidden by an earlier branch
   - collection-capacity arithmetic
-- **Not mutated**: conditions of a `when` without a subject other than `is` checks (only `if` is negated),
-  ranges iterated by a `for` loop,
+- **Not mutated**: stepped ranges iterated by a `for` loop, collections and `indices` it iterates,
   string templates, and return values other than Boolean, Int, nullable and (opt-in) empty ones. Equality checks in a subject `when` are
   mutated, but their descriptions are poor. Hand-written `equals` and `hashCode` overrides are skipped
   unless `mutate` lists `equalsHashCode`; the comparison with PIT

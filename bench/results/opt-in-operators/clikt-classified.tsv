@@ -1,0 +1,56 @@
+id	operator	verdict	tags	reason
+771462291	BOOLEAN_ARGUMENT	PIN		Nonexistent path for inputStream(): original fails with pathDoesNotExist, mutant falls through to mustBeReadable and reports "is not readable" instead.
+716109363	BOOLEAN_ARGUMENT	PIN		canBeFolder=true changes pathType name from "file" to "path" in every error message and stops rejecting a directory with pathIsDirectory.
+878962963	BOOLEAN_ARGUMENT	PIN		mustBeWritable=true rejects an existing read-only (chmod 444) file that the original accepts for reading.
+1646949953	BOOLEAN_ARGUMENT	PIN		With an unreadable file the original fails with pathIsNotReadable; the mutant hits Files.newInputStream AccessDeniedException, so convert's catch gives a different message.
+486186497	BOOLEAN_ARGUMENT	PIN		canBeSymlink=false makes inputStream() reject a symlink to a readable file that the original accepts.
+1328852337	BOOLEAN_ARGUMENT	PIN		canBeSymlink=false makes outputStream() reject a symlink path that the original accepts.
+695947817	NAMED_DEFAULT_DROP	PIN		option()'s help default is ""; completionOption(help="X") would show no help text in the help output.
+217078661	NAMED_DEFAULT_DROP	PIN		joinToString prefix default is "", so the completion option metavar becomes "bash|zsh|fish)" instead of "(bash|zsh|fish)" in help.
+1051520253	NAMED_DEFAULT_DROP	PIN		joinToString postfix default is "", so the completion option metavar becomes "(bash|zsh|fish" in help.
+466477135	NAMED_DEFAULT_DROP	PIN		joinToString limit default is -1; with 4+ excess args the message lists all of them instead of "(a b c ...)".
+2104297875	NAMED_DEFAULT_DROP	PIN		copy's helpTags default is this.helpTags, so argument().default("foo") / defaultLazy("x") loses the DEFAULT tag and help (showDefaultValues) omits "(default: foo)".
+961949380	NAMED_DEFAULT_DROP	EQUIV		Counted EQUIV: the receiver already has this nvalues in normal use (multiple().unique(), option().split()); only a contrived receiver differs. transformAll nvalues default null keeps this.nvalues; argument().transformAll{it}.unique() originally takes many values, the mutant only 1 (contrived: normal multiple().unique() already has -1).
+930529836	NAMED_DEFAULT_DROP	PIN		copy's completionCandidates default is explicitCompletionCandidates (not "?: completionCandidates"), so argument().convert(completionCandidates=Fixed(..)) loses its candidates in completion output.
+312209867	NAMED_DEFAULT_DROP	PIN		option copy's completionCandidates default is explicitCompletionCandidates, so option().convert(completionCandidates=X) loses X in generated completion scripts.
+1778368462	NAMED_DEFAULT_DROP	EQUIV		Counted EQUIV: the receiver already has this nvalues in normal use (multiple().unique(), option().split()); only a contrived receiver differs. copy nvalues default is this.nvalues; option().optionalValue("d").split(Regex(",")) keeps 0..1 so a bare --o is accepted instead of erroring (contrived; plain option() already 1..1).
+502710308	NAMED_DEFAULT_DROP	EQUIV		Counted EQUIV: the receiver already has this nvalues in normal use (multiple().unique(), option().split()); only a contrived receiver differs. Same as the Regex split: option().optionalValue("d").split(",") or pair().split(",") keeps non-1..1 nvalues, which changes how many tokens are consumed (contrived).
+1007411626	NAMED_DEFAULT_DROP	PIN		option() hidden default false; eagerOption("--x", hidden=true) would appear in help output.
+1112304072	NAMED_DEFAULT_DROP	PIN		option() helpTags default emptyMap; eagerOption("--x", helpTags=mapOf("t" to "v")) loses "(t: v)" in help.
+1587615296	NAMED_DEFAULT_DROP	PIN		default()'s defaultForHelp default is value.toString(); flag() with showDefaultValues shows "(default: false)" instead of nothing, and flag(defaultForHelp="enable") shows "false".
+1577090388	NAMED_DEFAULT_DROP	PIN		copy's helpTags default is this.helpTags (the unshadowed one), so deprecated() no longer adds "(deprecated)" to help.
+771040411	NAMED_DEFAULT_DROP	PIN		showAsRequired default is REQUIRED in this.helpTags (false for a raw option), so multiple(required=true) loses the "(required)" tag in help.
+1822287045	NAMED_DEFAULT_DROP	PIN		copy default keeps acceptsUnattachedValue=true, so optionalValueLazy(acceptsUnattachedValue=false){..} consumes "--o foo" as a value instead of leaving foo to an argument.
+1576762069	NAMED_DEFAULT_DROP	PIN		argument convert's completionCandidates default is explicitCompletionCandidates (null), so argument().choice("a","b") loses the Fixed candidates in bash/fish completion.
+1643835421	NAMED_DEFAULT_DROP	PIN		option convert's completionCandidates default is null, so option().choice("a","b") loses the Fixed candidates in completion scripts.
+1315428003	NAMED_DEFAULT_DROP	PIN		getKey joinSubcommands default is null; for an option in subcommand "sub", MapValueSource looks up "foo" instead of "sub.foo".
+1390889044	NAMED_DEFAULT_DROP	PIN		argument convert default gives no candidates, so argument().inputStream() stops completing as file paths (bash/fish script differs).
+1162162361	NAMED_DEFAULT_DROP	PIN		argument().outputStream() loses CompletionCandidates.Path in completion output.
+2136294151	NAMED_DEFAULT_DROP	PIN		argument().path() loses CompletionCandidates.Path in completion output.
+1750259928	NAMED_DEFAULT_DROP	PIN		joinSubcommands default is null; PropertiesValueSource.from(Path) in a subcommand reads key "foo" instead of "sub.foo".
+821453344	NAMED_DEFAULT_DROP	PIN		joinSubcommands default is null; PropertiesValueSource.from(String) default getKey drops the subcommand prefix, so "sub.foo" stops matching.
+1693358422	NAMED_DEFAULT_DROP	PIN		joinSubcommands default is null; PropertiesValueSource.from(Properties) default getKey drops the subcommand prefix.
+402983829	NUMERIC_ARGUMENT	PIN		With required arg A plus argument().multiple(required=true) and subcommand "sub", minArgCount goes 1->0, so input "sub y" parses sub as a subcommand instead of A="sub", B=[y].
+1626502469	NUMERIC_ARGUMENT	PIN		With argument().multiple(required=true) and subcommand "sub", minArgCount goes 0->1, so input "sub" becomes an argument value instead of selecting the subcommand.
+981225476	PRECONDITION_REMOVAL	PIN	MISUSE	Reading currentContext before parse throws NullPointerException from _context!! instead of IllegalStateException "Context accessed before parse".
+1216705269	PRECONDITION_REMOVAL	PIN	MISUSE	registerOptionGroup(g) called twice no longer throws IllegalArgumentException.
+1606990751	PRECONDITION_REMOVAL	PIN	MISUSE	Registering two groups with the same groupName no longer throws.
+2113953830	PRECONDITION_REMOVAL	PIN	MISUSE	Public NoSuchArgument(emptyList()) no longer throws; internal callers always pass takeLast(excessCount>0).
+1311959197	PRECONDITION_REMOVAL	PIN	MISUSE	Public MutuallyExclusiveGroupException(listOf("--a")) no longer throws; the internal caller always passes 2 or more names.
+1410186030	PRECONDITION_REMOVAL	PIN	MISUSE	argument().transformAll(nvalues=0){..} no longer throws at construction.
+1416681082	PRECONDITION_REMOVAL	PIN	MISUSE	groupChoice with an OptionGroup holding option(eager=true) no longer throws.
+2139049174	PRECONDITION_REMOVAL	PIN	MISUSE	cooccurring() group containing an eager option no longer throws.
+1734790079	PRECONDITION_REMOVAL	PIN	MISUSE	mutuallyExclusiveOptions with a single option no longer throws.
+1268883888	PRECONDITION_REMOVAL	PIN	MISUSE	mutuallyExclusiveOptions(option(), ...) with an unnamed option no longer throws at provideDelegate; it fails later or differently.
+2048652437	PRECONDITION_REMOVAL	PIN	MISUSE	option().switch(emptyMap<String,Int>()) no longer throws "Must specify at least one choice".
+1557585300	PRECONDITION_REMOVAL	PIN	MISUSE	option("foo") with an invalid name (no prefix) no longer throws "Invalid option name".
+62086184	PRECONDITION_REMOVAL	PIN	MISUSE	transformValues(2..1){..} with an empty range no longer throws.
+397444715	PRECONDITION_REMOVAL	PIN	MISUSE	transformValues(-1..2){..} no longer throws "Options cannot have nvalues < 0".
+514859663	PRECONDITION_REMOVAL	PIN	MISUSE	transformValues(1..1){..} no longer throws "Use convert() instead".
+1328836793	PRECONDITION_REMOVAL	PIN	MISUSE	argument().choice(emptyMap<String,Int>()) no longer throws at declaration.
+1738084082	PRECONDITION_REMOVAL	PIN	MISUSE	option().choice(emptyMap<String,Int>()) no longer throws at declaration.
+1424939014	PRECONDITION_REMOVAL	PIN	MISUSE	restrictTo(1..1) or restrictTo(5,1) with input "1" originally fails at parse with "min must be less than max" (the require runs inside convert), but the mutant accepts it.
+985585275	PRECONDITION_REMOVAL	PIN	MISUSE	registerOption(option()) or eagerOption(emptyList()) with no names/secondaryNames no longer throws at parse.
+629282733	PRECONDITION_REMOVAL	PIN	MISUSE	option().transformValues(0..2){it}.copy(acceptsUnattachedValue=false) no longer throws at parse.
+126548958	PRECONDITION_REMOVAL	PIN	MISUSE	ChainedValueSource(emptyList()) no longer throws.
+26187263	PRECONDITION_REMOVAL	PIN	MISUSE	ValueSource.name(option with no names) throws NPE (or a different error) instead of IllegalArgumentException "Option must have a name".

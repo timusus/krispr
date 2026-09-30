@@ -101,6 +101,58 @@ class OperatorFunctionalTest {
     }
 
     @Test
+    fun `NEGATE_IF on a when without a subject is killed by a test of the branch and survives one that accepts either result`(@TempDir dir: File) {
+        val code = { name: String -> "package $name\nfun size(s: String?, n: Int): Int = when { s != null && n > 0 -> s.length; else -> -1 }" }
+        assertKilledAndSurvived(
+            dir, "NEGATE_IF", code,
+            good = "assertEquals(3, good.size(\"abc\", 1)); assertEquals(-1, good.size(\"abc\", 0))",
+            weak = "assertTrue(weak.size(\"abc\", 1) >= -1)",
+        )
+    }
+
+    @Test
+    fun `RANGE_BOUNDARY on a for loop is killed by a test of the sum and survives one that only checks its sign`(@TempDir dir: File) {
+        val code = { name: String -> "package $name\nfun total(n: Int): Int { var t = 0; for (i in 1..n) t += i; return t }" }
+        assertKilledAndSurvived(
+            dir, "RANGE_BOUNDARY", code,
+            good = "assertEquals(6, good.total(3))",
+            weak = "assertTrue(weak.total(3) > 0)",
+        )
+    }
+
+    @Test
+    fun `SCOPE_FUNCTION_BODY is killed by a test of what the block did and survives one that ignores it`(@TempDir dir: File) {
+        val code = { name: String ->
+            "package $name\nclass Cart { val items = mutableListOf<Int>() }\nfun cart(x: Int): Cart = Cart().apply { items.add(x); items.add(x * 2) }"
+        }
+        assertKilledAndSurvived(
+            dir, "SCOPE_FUNCTION_BODY", code,
+            good = "assertEquals(listOf(2, 4), good.cart(2).items)",
+            weak = "assertNotNull(weak.cart(2))",
+        )
+    }
+
+    @Test
+    fun `BOOLEAN_ARGUMENT is killed by a test that differs in case and survives one that does not`(@TempDir dir: File) {
+        val code = { name: String -> "package $name\nfun same(a: String, b: String): Boolean = a.equals(b, ignoreCase = true)" }
+        assertKilledAndSurvived(
+            dir, "BOOLEAN_ARGUMENT", code,
+            good = "assertTrue(good.same(\"A\", \"a\"))",
+            weak = "assertTrue(weak.same(\"a\", \"a\"))",
+        )
+    }
+
+    @Test
+    fun `NUMERIC_ARGUMENT is killed by a test with more items than the limit and survives one with fewer`(@TempDir dir: File) {
+        val code = { name: String -> "package $name\nfun top(xs: List<Int>): List<Int> = xs.take(2)" }
+        assertKilledAndSurvived(
+            dir, "NUMERIC_ARGUMENT", code,
+            good = "assertEquals(listOf(1, 2), good.top(listOf(1, 2, 3)))",
+            weak = "assertEquals(listOf(1), weak.top(listOf(1)))",
+        )
+    }
+
+    @Test
     fun `ARGUMENT_PROPAGATION is killed by a test of a tagged version and survives one without the prefix`(@TempDir dir: File) {
         val code = { name: String -> "package $name\nfun version(tag: String): String = tag.removePrefix(\"v\")" }
         assertKilledAndSurvived(

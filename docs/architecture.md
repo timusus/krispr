@@ -26,8 +26,8 @@
   - `CONDITIONALS_BOUNDARY`: `<↔<=`, `>↔>=`
   - `NEGATE_EQUALITY`: `==↔!=`
   - `BOOLEAN_LOGIC`: `&&↔||`, short-circuiting kept
-  - `NEGATE_IF`: an `if` condition is negated, where `CONDITION_TRUE` and `CONDITION_FALSE` do not
-    both apply (below)
+  - `NEGATE_IF`: an `if` condition, or a branch condition of a `when` without a subject, is negated,
+    where `CONDITION_TRUE` and `CONDITION_FALSE` do not both apply (below)
   - `RETURN_VALUE`: a Boolean return is negated; an Int return becomes 0, or 1 when it was already 0
   - `INCREMENTS`: `++↔--`, prefix and postfix
   - `INVERT_NEGS`: `-x → x`
@@ -53,7 +53,10 @@
     primitives, UInt or ULong gets one mutant per bound, flipping whether that bound is included:
     `x in lo..hi → lo < x && x <= hi` and `→ lo <= x && x < hi`. A `step` range gets one mutant that
     leaves out its first element (`x in 0..59 step 15 → x != 0 && x in 0..59 step 15`); its last
-    element depends on the step, so it is left alone. Loops over ranges are left alone.
+    element depends on the step, so it is left alone. The range a `for` loop iterates, over Int, Long or
+    Char, gets one mutant per bound too: its first element is left out (`1..n → (1 + 1)..n`, `n downTo 1
+    → (n - 1) downTo 1`), and its last is left out or added (`0..n → 0 until n`, `0 until n → 0..n`,
+    `n downTo 1 → n downTo (1 + 1)`). A stepped loop range is left alone.
   - `CONDITION_TRUE` / `CONDITION_FALSE`: PIT's remove-conditional. The condition of an `if` or of a
     `when` branch without a subject becomes `true` (the branch always runs) or `false` (it never
     does): `if (total >= 100) → if (true)`. Negation is killed by a test of either side; these survive
@@ -108,6 +111,21 @@
       cancellation lets a cancelled coroutine carry on, which no test should have to catch.
     - `LAUNCH_BODY`: the body of `scope.launch { … }` (or a Unit `async`) is skipped; the job still starts
       and completes. A body that only logs, or is one call `REMOVE_CALL` already removes, gets no mutant.
+  - `SCOPE_FUNCTION_BODY`: the block of `x.also { … }` or `x.apply { … }`, or of a `let { … }` or
+    `run { … }` whose value nothing reads, is skipped; `also` and `apply` still return `x`. A block that
+    only logs, or is one call or assignment `REMOVE_CALL` or `REMOVE_ASSIGNMENT` already removes, gets no
+    mutant, and a safe call's (`x?.let { … }` as a statement) is `SAFE_CALL_BODY`'s.
+  - `NAMED_DEFAULT_DROP`: an argument written with its parameter's name, where that parameter has a
+    default, is left out, one mutant per argument (`xs.joinToString(separator = ";") →
+    xs.joinToString()`, `Box(width = 2) → Box()`), in calls and constructor calls. Every argument is still
+    evaluated; a constant equal to the module's own default, and a data class `copy`, get no mutant.
+  - `BOOLEAN_ARGUMENT`: a `true` or `false` literal argument is flipped, named or positional
+    (`a.equals(b, ignoreCase = true) → a.equals(b, ignoreCase = false)`), in calls and constructor
+    calls. A vararg's elements are left alone.
+  - `NUMERIC_ARGUMENT`: a number literal passed to `take`, `drop`, `takeLast`, `dropLast`, `chunked`,
+    `windowed`, `subList`, `padStart`, `padEnd`, `coerceIn`, `coerceAtMost` or `coerceAtLeast` becomes
+    `n + 1` and `n - 1` (`xs.take(3) → xs.take(4)`). A count that would go negative, or a chunk or
+    window size or step under one, only throws, so it gets no mutant.
   - Opt-in, with `operators = listOf("DEFAULTS", …)` or `-Pkrispr.operators=DEFAULTS,…`:
     - `EMPTY_RETURNS`: a String, List, Set, Map, Collection, Iterable, Sequence or Flow return value
       becomes empty (`""`, `emptyList()`, `emptyFlow()`, …); a named function's String return is left to
@@ -122,10 +140,6 @@
     - `PRECONDITION_REMOVAL`: `require(c)` and `check(c) { … }` are skipped, in `init` blocks (a value
       class's included) and anywhere else; `requireNotNull(x)` and `checkNotNull(x)` return `x` unchecked.
       While it is on, a `require(c)` statement is its site rather than `REMOVE_CALL`'s.
-    - `NAMED_DEFAULT_DROP`: an argument written with its parameter's name, where that parameter has a
-      default, is left out, one mutant per argument (`xs.joinToString(separator = ";") →
-      xs.joinToString()`, `Box(width = 2) → Box()`), in calls and constructor calls. Every argument is still
-      evaluated; a constant equal to the module's own default, and a data class `copy`, get no mutant.
     - `SEALED_WHEN_ROUTE`: in a `when` over a sealed type, an `is A ->` or `B ->` branch runs the next
       such branch's body instead (`is Loading → runs the Empty branch`), as if the case were another.
       Never towards a body that relies on a smart cast of the subject, nor one with the same text.
@@ -134,8 +148,14 @@
     mutants; most are killed, and of 15 sampled new survivors 9 were real test gaps and 6 could not be
     caught (`first↔last` on a one-element list), none junk. The two that remain opt-in stay so for
     their cost and the share of equivalents in `SWAP_COLLECTION_CALL` (`firstOrNull → lastOrNull` on
-    a unique key, `sorted` swaps). `COPY_ARG_DROP`, `PRECONDITION_REMOVAL`, `NAMED_DEFAULT_DROP` and
-    `SEALED_WHEN_ROUTE` find no gap the defaults miss, so they stay opt-in too.
+    a unique key, `sorted` swaps).
+
+    `NAMED_DEFAULT_DROP`, `BOOLEAN_ARGUMENT` and `NUMERIC_ARGUMENT` were measured the same way on clikt,
+    kotlinpoet and `sample-android`, reading every survivor: 30 of 36, 17 of 20 and 4 of 7 of their
+    survivors were behaviour a test could pin down, so they are on by default. `PRECONDITION_REMOVAL`
+    passed that bar too (50 of 62), but 49 of the 50 only guard against misusing an API, and it cost
+    the most run time, so it stays opt-in. `COPY_ARG_DROP` and `SEALED_WHEN_ROUTE` left no survivor
+    there, so there was nothing to judge them on; they stay opt-in.
 - **Stable ids.** A mutant's id is the first 31 bits of SHA-256 over four things:
   - the file path relative to the root project
   - the enclosing declaration's fully qualified name, with parameter types, so overloads differ

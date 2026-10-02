@@ -138,7 +138,9 @@ class MutationTransformer(
 
     private val builtIns = context.irBuiltIns
     private val operators = if (extreme) setOf(Operator.REMOVE_BODY) else operators - Operator.REMOVE_BODY
-    private val source: String? by lazy { File(file.path).takeIf { it.isFile }?.readText() }
+    // The compiler counts IR offsets over the text with LF line endings; a CRLF checkout (Windows) would shift
+    // every slice taken from the file by one character per line above it.
+    private val source: String? by lazy { File(file.path).takeIf { it.isFile }?.readText()?.replace("\r\n", "\n") }
 
     /** Lines ending in a `// krispr:ignore` comment: their mutants are dropped. */
     private val ignoredLines: Set<Int> by lazy {

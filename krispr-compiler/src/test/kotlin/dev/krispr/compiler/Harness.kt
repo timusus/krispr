@@ -51,8 +51,9 @@ object Harness {
      * Compiles `Sample.kt` plus [extraSources] (path relative to the sources directory → text) with the
      * krispr plugin. [otherPlugins] are registered ahead of krispr, so only [kotlincArguments] such as
      * `-Xcompiler-plugin-order` can put krispr first. Sources under [excludedDirs] (relative to the
-     * sources directory) get no mutants. [cliPlugins] loads krispr and the listed plugin jars through the
-     * compiler's own `-Xplugin` loading instead (krispr last), which is where `-Xcompiler-plugin-order`
+     * sources directory) get no mutants. [lineSeparator] ends the lines of `Sample.kt` on disk.
+     * [cliPlugins] loads krispr and the listed plugin jars through the compiler's own
+     * `-Xplugin` loading instead (krispr last), which is where `-Xcompiler-plugin-order`
      * applies; in-memory registrars are always invoked in list order. [mutate] names the arid code
      * categories ([AridCategory.option]) to mutate anyway; [operators] and [mode] are the `operator`
      * and `mode` options. [probe] is the `probe` option (showChanges), left out when null.
@@ -70,6 +71,7 @@ object Harness {
         otherPlugins: List<CompilerPluginRegistrar> = emptyList(),
         kotlincArguments: List<String> = emptyList(),
         excludedDirs: List<String> = emptyList(),
+        lineSeparator: String = "\n",
         captureIr: Boolean = false,
         cliPlugins: List<File>? = null,
         mutate: Set<String> = emptySet(),
@@ -89,7 +91,7 @@ object Harness {
         }
         val result = try { KotlinCompilation().apply {
             workingDir = workDir
-            sources = listOf(SourceFile.kotlin("Sample.kt", source)) +
+            sources = listOf(SourceFile.kotlin("Sample.kt", source.trimIndent().replace("\n", lineSeparator), trimIndent = false)) +
                 extraSources.map { (path, text) -> SourceFile.kotlin(path, text) }
             val options = listOf(
                 "manifest" to manifest.absolutePath,

@@ -232,9 +232,24 @@ class KrisprGradlePlugin : KotlinCompilerPluginSupportPlugin {
                 }
             }
 
+            // A testProject's configurations resolve only under that project's lock, which these tasks do not
+            // hold when the configuration cache stores them or when projects run in parallel: a task of the
+            // testProject resolves its test classpath and hands the files over.
+            var handedOver: Provider<List<File>>? = null
+            project.afterEvaluate {
+                val path = extension.testProject.orNull ?: return@afterEvaluate
+                val other = project.project(path)
+                val name = "krisprTestClasspathFor" + project.path.split(':').joinToString("") { it.replaceFirstChar(Char::uppercaseChar) }
+                val listing = other.tasks.register(name, KrisprTestClasspathTask::class.java) { task ->
+                    task.classpath.from(Callable { testTask.get().classpath })
+                    task.listing.set(other.layout.buildDirectory.file("krispr/$name.txt"))
+                }
+                handedOver = listing.flatMap { it.listing }.map { file -> file.asFile.readLines().filter(String::isNotEmpty).map(::File) }
+            }
+
             // The test task's own classpath: for Android that is AGP's unit test classpath (android.jar or
             // Robolectric's runtime, R classes, the unit test config), built here from instrumented classes.
-            val testClasspath = project.files(runtime, platform, Callable { testTask.get().classpath })
+            val testClasspath = project.files(runtime, platform, Callable { handedOver ?: testTask.get().classpath })
             val testClassesDirs = project.files(Callable { testTask.get().testClassesDirs })
             val coverage = krisprDir.file("coverage.tsv")
             val doFirstArgs = project.objects.listProperty(String::class.java)

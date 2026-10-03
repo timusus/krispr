@@ -1031,6 +1031,67 @@ class JvmFunctionalTest {
     }
 
     @Test
+    fun `a module tested from its testProject stores its tasks in the configuration cache of a parallel build`(@TempDir dir: File) {
+        writeTestedFromAnotherProject(dir)
+
+        run(dir, ":lib:krisprRun", "--configuration-cache", "--parallel", "-Pkrispr.history=false")
+
+        val report = dir.resolve("lib/build/krispr/report.json").readText()
+        assertTrue(count(report, "KILLED") > 0, report)
+    }
+
+    @Test
+    fun `a module tested from its testProject runs in parallel with other projects`(@TempDir dir: File) {
+        writeTestedFromAnotherProject(dir)
+
+        run(dir, ":lib:krisprRun", "--parallel", "-Pkrispr.history=false")
+
+        val report = dir.resolve("lib/build/krispr/report.json").readText()
+        assertTrue(count(report, "KILLED") > 0, report)
+    }
+
+    /** `:lib` holds the code and krispr, `:tests` the tests that reach it: `testProject = ":tests"`. */
+    private fun writeTestedFromAnotherProject(dir: File) {
+        writeProject(dir)
+        dir.resolve("build.gradle.kts").writeText(
+            """
+            plugins {
+                kotlin("jvm") version "$KOTLIN" apply false
+                id("dev.krispr") apply false
+            }
+            """.trimIndent(),
+        )
+        dir.resolve("settings.gradle.kts").appendText("\ninclude(\":lib\", \":tests\")\n")
+        dir.resolve("lib/build.gradle.kts").apply { parentFile.mkdirs() }.writeText(
+            """
+            plugins {
+                kotlin("jvm")
+                id("dev.krispr")
+            }
+            kotlin { jvmToolchain(21) }
+            krispr {
+                threads.set(2)
+                testProject.set(":tests")
+            }
+            """.trimIndent(),
+        )
+        dir.resolve("lib/src/main/kotlin/Calc.kt").apply { parentFile.mkdirs() }.writeText("fun add(a: Int, b: Int) = a + b\n")
+        dir.resolve("tests/build.gradle.kts").apply { parentFile.mkdirs() }.writeText(
+            """
+            plugins { kotlin("jvm") }
+            kotlin { jvmToolchain(21) }
+            dependencies {
+                testImplementation(project(":lib"))
+                testImplementation(kotlin("test"))
+            }
+            tasks.test { useJUnitPlatform() }
+            """.trimIndent(),
+        )
+        dir.resolve("tests/src/test/kotlin/CalcTest.kt").apply { parentFile.mkdirs() }
+            .writeText("class CalcTest { @kotlin.test.Test fun adds() = kotlin.test.assertEquals(5, add(2, 3)) }\n")
+    }
+
+    @Test
     fun `a small module's mutants start while a large module still runs, and the cap holds`(@TempDir dir: File) {
         // #41: each thread used to keep its JVM slot until its module's queue was empty, so a module that
         // asked after a large one held every slot waited for the large one to finish.
